@@ -84,7 +84,7 @@ async def item_command(interaction: discord.Interaction, name: str):
     except Exception as e:
         await interaction.followup.send(f"❌ Error fetching basic data: {e}")
 
-@bot.tree.command(name="craft", description="Look up advanced crafting ingredients and details.")
+@bot.tree.command(name="craft", description="Look up advanced crafting materials and details.")
 @app_commands.describe(name="The name of the crafted item")
 async def craft_command(interaction: discord.Interaction, name: str):
     await interaction.response.defer()
@@ -100,9 +100,11 @@ async def craft_command(interaction: discord.Interaction, name: str):
         if not matches.empty:
             row = matches.iloc[0]
             embed = discord.Embed(title=f"⚔️ Crafting Info: {row['Item']}", color=discord.Color.blue())
-            embed.add_field(name="Craft Skill", value=str(row.get('CraftSkill', 'N/A')), inline=True)
             embed.add_field(name="Required Level", value=str(row.get('Level', 'N/A')), inline=True)
-            embed.add_field(name="Ingredients", value=str(row.get('Ingredients', 'N/A')), inline=False)
+            embed.add_field(name="Weight", value=str(row.get('Weight', 'N/A')), inline=True)
+            embed.add_field(name="Exp", value=str(row.get('Exp', 'N/A')), inline=True)
+            embed.add_field(name="Effects", value=str(row.get('Effects', 'N/A')), inline=False)
+            embed.add_field(name="Materials", value=str(row.get('Materials', 'N/A')), inline=False)
             embed.set_footer(text="Fairyland Online Crafting Database")
             
             await interaction.followup.send(embed=embed)
