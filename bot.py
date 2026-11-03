@@ -8,7 +8,6 @@ import pandas as pd
 import requests
 import io
 
-# Keep-alive web server for Render Free Web Service
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -45,36 +44,14 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-# --- Helper function for recipe/equipment formatting ---
-def format_recipe_embed(row, df, title_prefix, color):
-    embed = discord.Embed(title=f"{title_prefix}: {row['Item']}", color=color)
-    
-    if len(df.columns) > 0 and df.columns[0] != 'Item':
-        cat_col = df.columns[0]
-        embed.add_field(name="Category", value=str(row.get(cat_col, 'N/A')), inline=True)
-        
-    embed.add_field(name="Required Level", value=str(row.get('Level', 'N/A')), inline=True)
-    
-    if 'Weight' in df.columns and pd.notna(row.get('Weight')):
-        embed.add_field(name="Weight", value=str(row.get('Weight')), inline=True)
-    if 'Exp' in df.columns and pd.notna(row.get('Exp')):
-        embed.add_field(name="Exp", value=str(row.get('Exp')), inline=True)
-    if 'Effects' in df.columns and pd.notna(row.get('Effects')):
-        embed.add_field(name="Effects", value=str(row.get('Effects')), inline=False)
-        
-    embed.add_field(name="Ingredients", value=str(row.get('Ingredients', 'N/A')), inline=False)
-    embed.set_footer(text="Fairyland Online Database")
-    return embed
-
-# --- Universal /search Command (Scans all 4 tabs) ---
 @bot.tree.command(name="search", description="Search for any item or recipe across all databases (Basic, Advanced, Weapon, Armor).")
-@app_commands.describe(name="The name of the item to search")
+@app_commands.describe(name="The name of the item to search (e.g. Apple or Ginger Tea)")
 async def search_command(interaction: discord.Interaction, name: str):
     await interaction.response.defer()
     target = name.strip().lower()
     
     try:
-        # 1. Check Basic Sheet
+        # 1. Search Basic Sheet
         resp = requests.get(SHEETS["Basic"])
         resp.encoding = 'utf-8'
         df_basic = pd.read_csv(io.StringIO(resp.text))
@@ -110,7 +87,7 @@ async def search_command(interaction: discord.Interaction, name: str):
             await interaction.followup.send(embed=embed)
             return
 
-        # 2. Check Advanced, Weapon, Armor Sheets
+        # 2. Search Crafting Sheets (Advanced, Weapon, Armor)
         sheet_configs = [
             ("Advanced", "⚔️ Crafting Info", discord.Color.blue()),
             ("Weapon", "🗡️ Weapon Info", discord.Color.orange()),
@@ -126,15 +103,35 @@ async def search_command(interaction: discord.Interaction, name: str):
             if 'Item' in df.columns:
                 matches = df[df['Item'].astype(str).str.strip().str.lower() == target]
                 if not matches.empty:
-                    embed = format_recipe_embed(matches.iloc[0], df, title_prefix, color)
+                    row = matches.iloc[0]
+                    embed = discord.Embed(title=f"{title_prefix}: {row['Item']}", color=color)
+                    
+                    # Optional Category (Column B if unnamed or named)
+                    if len(df.columns) > 1 and pd.notna(row.iloc[1]):
+                        cat_name = df.columns[1] if df.columns[1] != '' else 'Category'
+                        embed.add_field(name=cat_name, value=str(row.iloc[1]), inline=True)
+                        
+                    if 'Level' in df.columns and pd.notna(row.get('Level')):
+                        embed.add_field(name="Required Level", value=str(row.get('Level')), inline=True)
+                    if 'Weight' in df.columns and pd.notna(row.get('Weight')):
+                        embed.add_field(name="Weight", value=str(row.get('Weight')), inline=True)
+                    if 'Exp' in df.columns and pd.notna(row.get('Exp')):
+                        embed.add_field(name="Exp", value=str(row.get('Exp')), inline=True)
+                    if 'Effects' in df.columns and pd.notna(row.get('Effects')):
+                        embed.add_field(name="Effects", value=str(row.get('Effects')), inline=False)
+                    if 'Ingredients' in df.columns and pd.notna(row.get('Ingredients')):
+                        embed.add_field(name="Ingredients", value=str(row.get('Ingredients')), inline=False)
+                        
+                    embed.set_footer(text="Fairyland Online Crafting Database")
                     await interaction.followup.send(embed=embed)
                     return
 
-        # If not found anywhere
+        # If not found anywhere across all sheets
         await interaction.followup.send(f"❌ Sorry, **'{name}'** was not found in any database.")
         
     except Exception as e:
-        await interaction.followup.send(f"❌ Error searching database: {e}")
+        print(f"Search error: {e}")
+        await interaction.followup.send(f"❌ An error occurred while searching the database.")
 
 token = os.environ.get("DISCORD_TOKEN")
 if not token:
