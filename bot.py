@@ -8,6 +8,7 @@ import pandas as pd
 import requests
 import io
 
+# Keep-alive web server for Render Free Web Service
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -19,11 +20,14 @@ def run_web_server():
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
     server.serve_forever()
 
+# Start dummy web server in background thread
 threading.Thread(target=run_web_server, daemon=True).start()
 
+# -------------------------------------------------------------
 SHEET_ID = "1FiReFPYNbgFhgLcNuZ43bxtrJ9R92vqKpuD6OQDwKjo"
 BASIC_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet1"
 ADVANCE_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Advance"
+# -------------------------------------------------------------
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -38,6 +42,7 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
+# --- /item Command (Basic Skills & Gathering) ---
 @bot.tree.command(name="item", description="Look up basic item skills, levels, and location.")
 @app_commands.describe(name="The name of the item to search (e.g. Apple or 蘋果)")
 async def item_command(interaction: discord.Interaction, name: str):
@@ -84,7 +89,8 @@ async def item_command(interaction: discord.Interaction, name: str):
     except Exception as e:
         await interaction.followup.send(f"❌ Error fetching basic data: {e}")
 
-@bot.tree.command(name="craft", description="Look up advanced crafting materials and details.")
+# --- /craft Command (Advanced Crafting Skills) ---
+@bot.tree.command(name="craft", description="Look up advanced crafting ingredients and details.")
 @app_commands.describe(name="The name of the crafted item")
 async def craft_command(interaction: discord.Interaction, name: str):
     await interaction.response.defer()
@@ -104,7 +110,7 @@ async def craft_command(interaction: discord.Interaction, name: str):
             embed.add_field(name="Weight", value=str(row.get('Weight', 'N/A')), inline=True)
             embed.add_field(name="Exp", value=str(row.get('Exp', 'N/A')), inline=True)
             embed.add_field(name="Effects", value=str(row.get('Effects', 'N/A')), inline=False)
-            embed.add_field(name="Materials", value=str(row.get('Materials', 'N/A')), inline=False)
+            embed.add_field(name="Ingredients", value=str(row.get('Ingredients', 'N/A')), inline=False)
             embed.set_footer(text="Fairyland Online Crafting Database")
             
             await interaction.followup.send(embed=embed)
@@ -114,5 +120,7 @@ async def craft_command(interaction: discord.Interaction, name: str):
         await interaction.followup.send(f"❌ Error fetching crafting data: {e}")
 
 token = os.environ.get("DISCORD_TOKEN")
-if token:
+if not token:
+    print("ERROR: DISCORD_TOKEN environment variable is missing!")
+else:
     bot.run(token)
