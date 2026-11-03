@@ -5,6 +5,8 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import pandas as pd
+import requests
+import io
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -20,8 +22,6 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 SHEET_ID = "1FiReFPYNbgFhgLcNuZ43bxtrJ9R92vqKpuD6OQDwKjo"
-
-# URLs for both Sheet tabs
 BASIC_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet1"
 ADVANCE_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Advance"
 
@@ -38,13 +38,14 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-# --- Existing /item Command ---
 @bot.tree.command(name="item", description="Look up basic item skills, levels, and location.")
 @app_commands.describe(name="The name of the item to search (e.g. Apple or 蘋果)")
 async def item_command(interaction: discord.Interaction, name: str):
     await interaction.response.defer()
     try:
-        df = pd.read_csv(BASIC_CSV_URL)
+        response = requests.get(BASIC_CSV_URL)
+        response.encoding = 'utf-8'
+        df = pd.read_csv(io.StringIO(response.text))
         df.columns = df.columns.str.strip()
         target = name.strip().lower()
 
@@ -83,17 +84,17 @@ async def item_command(interaction: discord.Interaction, name: str):
     except Exception as e:
         await interaction.followup.send(f"❌ Error fetching basic data: {e}")
 
-# --- New /craft Command for Advanced Skills ---
 @bot.tree.command(name="craft", description="Look up advanced crafting ingredients and details.")
 @app_commands.describe(name="The name of the crafted item")
 async def craft_command(interaction: discord.Interaction, name: str):
     await interaction.response.defer()
     try:
-        df = pd.read_csv(ADVANCE_CSV_URL)
+        response = requests.get(ADVANCE_CSV_URL)
+        response.encoding = 'utf-8'
+        df = pd.read_csv(io.StringIO(response.text))
         df.columns = df.columns.str.strip()
         target = name.strip().lower()
 
-        # Assuming columns in 'Advance' tab: CraftSkill, Item, Ingredients, Level, etc.
         matches = df[df['Item'].astype(str).str.strip().str.lower() == target]
 
         if not matches.empty:
