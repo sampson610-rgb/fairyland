@@ -1,16 +1,31 @@
 import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import discord
 from discord.ext import commands
 from discord import app_commands
 import pandas as pd
 
+# Keep-alive web server for Render Free Web Service
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
+
+# Start dummy web server in background thread
+threading.Thread(target=run_web_server, daemon=True).start()
+
 # -------------------------------------------------------------
-# Replace with your actual Google Sheet ID and Sheet tab name!
-SHEET_ID = "YOUR_SPREADSHEET_ID_HERE"
-SHEET_NAME = "Sheet1"  # Or "Form_Responses", "Basic Skills", etc.
+SHEET_ID = "1FiReFPYNbgFhgLcNuZ43bxtrJ9R92vqKpuD6OQDwKjo"
+SHEET_NAME = "Sheet1"
 # -------------------------------------------------------------
 
-# Direct CSV export URL for Google Sheets
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
 
 intents = discord.Intents.default()
@@ -18,30 +33,20 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 def fetch_item_data(item_name: str):
-    """Fetch and search item data directly from the Google Sheet."""
     try:
         df = pd.read_csv(CSV_URL)
         df.columns = df.columns.str.strip()
-        
-        # Column mapping based on your sheet layout:
-        # Column A (index 0): Work Skill
-        # Column B (index 1): Item Name
-        # Column C (index 2): Required Level
-        # Column D (index 3): EXP
-        # Column E (index 4): Location
-        item_col = df.columns[1] 
-        
-        matches = df[df[item_col].astype(str).str.strip().str.lower() == item_name.strip().lower()]
+        matches = df[df['Item'].astype(str).str.strip().str.lower() == item_name.strip().lower()]
         
         if not matches.empty:
             row = matches.iloc[0]
             return {
                 "found": True,
-                "work_skill": str(row.iloc[0]),
-                "item": str(row.iloc[1]),
-                "level": str(row.iloc[2]),
-                "exp": str(row.iloc[3]),
-                "location": str(row.iloc[4])
+                "work_skill": str(row['WorkSkill']),
+                "item": str(row['Item']),
+                "level": str(row['Level']),
+                "exp": str(row['Exp']),
+                "location": str(row['Location'])
             }
     except Exception as e:
         print(f"Error fetching sheet data: {e}")
@@ -60,8 +65,7 @@ async def on_ready():
 @bot.tree.command(name="item", description="Look up item skills, levels, and location.")
 @app_commands.describe(name="The name of the item to search (e.g. Apple)")
 async def item_command(interaction: discord.Interaction, name: str):
-    await interaction.response.defer() # Gives the bot time to fetch live data
-    
+    await interaction.response.defer()
     data = fetch_item_data(name)
     
     if data["found"]:
@@ -79,5 +83,4 @@ async def item_command(interaction: discord.Interaction, name: str):
     else:
         await interaction.followup.send(f"❌ Sorry, item **'{name}'** was not found in the database.")
 
-# Start bot using environment variable
 bot.run(os.environ.get("DISCORD_TOKEN"))
