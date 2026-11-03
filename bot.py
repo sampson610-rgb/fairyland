@@ -33,8 +33,10 @@ def fetch_item_data(query_name: str):
         df.columns = df.columns.str.strip()
         target = query_name.strip().lower()
 
-        has_cn_col = 'Item_CN' in df.columns
-        if has_cn_col:
+        has_cn_item = 'Item_CN' in df.columns
+        has_cn_loc = 'Location_CN' in df.columns
+
+        if has_cn_item:
             matches = df[
                 (df['Item'].astype(str).str.strip().str.lower() == target) |
                 (df['Item_CN'].astype(str).str.strip().str.lower() == target)
@@ -45,7 +47,10 @@ def fetch_item_data(query_name: str):
         if not matches.empty:
             row = matches.iloc[0]
             english_name = str(row['Item'])
-            cn_name = str(row['Item_CN']) if (has_cn_col and pd.notna(row['Item_CN'])) else english_name
+            cn_name = str(row['Item_CN']) if (has_cn_item and pd.notna(row['Item_CN'])) else english_name
+            
+            english_loc = str(row.get('Location', 'N/A'))
+            cn_loc = str(row['Location_CN']) if (has_cn_loc and pd.notna(row['Location_CN'])) else english_loc
 
             return {
                 "found": True,
@@ -54,7 +59,8 @@ def fetch_item_data(query_name: str):
                 "item_cn": cn_name,
                 "level": str(row.get('Level', 'N/A')),
                 "exp": str(row.get('Exp', 'N/A')),
-                "location": str(row.get('Location', 'N/A'))
+                "location": english_loc,
+                "location_cn": cn_loc
             }
     except Exception as e:
         print(f"Error fetching sheet data: {e}")
@@ -77,18 +83,21 @@ async def item_command(interaction: discord.Interaction, name: str):
 
     if data["found"]:
         title_text = f"🍏 Item Info: {data['item']} ({data['item_cn']})" if data['item_cn'] != data['item'] else f"🍏 Item Info: {data['item']}"
+        
+        # Format location display to show both if available
+        loc_display = f"{data['location']}\n{data['location_cn']}" if data['location_cn'] != data['location'] else data['location']
+
         embed = discord.Embed(title=title_text, color=discord.Color.green())
         embed.add_field(name="Work Skill", value=data["work_skill"], inline=True)
         embed.add_field(name="Required Level", value=data["level"], inline=True)
         embed.add_field(name="EXP", value=data["exp"], inline=True)
-        embed.add_field(name="Location", value=data["location"], inline=False)
+        embed.add_field(name="Location", value=loc_display, inline=False)
         embed.set_footer(text="Fairyland Online Item Database")
+        
         await interaction.followup.send(embed=embed)
     else:
         await interaction.followup.send(f"❌ Sorry, item **'{name}'** was not found in the database.")
 
 token = os.environ.get("DISCORD_TOKEN")
-if not token:
-    print("ERROR: DISCORD_TOKEN environment variable is missing!")
-else:
+if token:
     bot.run(token)
