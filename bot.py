@@ -149,93 +149,14 @@ async def search_command(interaction: discord.Interaction, name: str):
                 level_val = str(row['Level']) if 'Level' in df.columns and pd.notna(row.get('Level')) else 'N/A'
                 
                 embed = discord.Embed(title=title, color=discord.Color.blue())
-                embed.add_field(name="Work Skill", value=work_skill_val, inline=True)
-                embed.add_field(name="Required Level", value=level_val, inline=True)
+                
+                # 修改后的标签 (Work Skill 技能 / Required Level 等级)
+                embed.add_field(name="Work Skill (技能)", value=work_skill_val, inline=True)
+                embed.add_field(name="Required Level (等级)", value=level_val, inline=True)
                 
                 if 'Location' in df.columns and pd.notna(row.get('Location')):
                     loc = str(row['Location'])
                     loc_cn = str(row['Location_CN']) if ('Location_CN' in df.columns and pd.notna(row.get('Location_CN'))) else loc
                     loc_display = f"{loc}\n{loc_cn}" if loc_cn != loc else loc
-                    embed.add_field(name="Location", value=loc_display, inline=False)
-                    
-                if 'Effects' in df.columns and pd.notna(row.get('Effects')):
-                    embed.add_field(name="Effects", value=str(row['Effects']), inline=False)
-                    
-                if 'Ingredients' in df.columns and pd.notna(row.get('Ingredients')):
-                    embed.add_field(name="Ingredients", value=str(row['Ingredients']), inline=False)
-                    
-                if 'Exp' in df.columns and pd.notna(row.get('Exp')):
-                    embed.add_field(name="EXP", value=str(row['Exp']), inline=True)
-                    
-                embed.set_footer(text=f"Database: {sheet_name} | Fairyland Online")
-                await interaction.followup.send(embed=embed)
-                break
-                
-        if not found:
-            await interaction.followup.send(f"❌ Sorry, **'{name}'** was not found in any database.")
-        
-    except Exception as e:
-        print(f"Search error: {e}")
-        await interaction.followup.send(f"❌ An error occurred while searching the database.")
-
-# --- /skill Command (Sorted & Level-First Formatting) ---
-@bot.tree.command(name="skill", description="View a sorted list of all items and recipes for a specific Work Skill.")
-@app_commands.describe(skill_name="Type or select the work skill")
-@app_commands.autocomplete(skill_name=skill_autocomplete)
-async def skill_command(interaction: discord.Interaction, skill_name: str):
-    await interaction.response.defer()
-    target = skill_name.strip().lower()
-    raw_results = []
-    
-    try:
-        for sheet_name, df in cached_dfs.items():
-            col_to_check = None
-            for col in ['WorkSkill', 'Work Skill']:
-                if col in df.columns:
-                    col_to_check = col
-                    break
-            if not col_to_check and len(df.columns) > 0:
-                col_to_check = df.columns[0]
-                
-            if not col_to_check or 'Item' not in df.columns:
-                continue
-                
-            matches = df[df[col_to_check].astype(str).str.strip().str.lower() == target]
-            for _, row in matches.iterrows():
-                item = str(row['Item'])
-                
-                # Parse level safely for sorting
-                lvl_raw = row.get('Level') if 'Level' in df.columns else '999'
-                try:
-                    lvl_num = int(float(lvl_raw))
-                except:
-                    lvl_num = 999  # Put items without numbers at the bottom
-                    
-                raw_results.append({
-                    'level': lvl_num,
-                    'text': f"• **Lvl {lvl_num}** : {item} `[{sheet_name}]`"
-                })
-                
-        if raw_results:
-            # Sort items numerically by level (lowest to highest)
-            raw_results.sort(key=lambda x: x['level'])
-            
-            desc = "\n".join([r['text'] for r in raw_results])
-            if len(desc) > 4000:
-                desc = desc[:3996] + "..."
-                
-            embed = discord.Embed(title=f"🛠️ Work Skill List: {skill_name}", description=desc, color=discord.Color.gold())
-            embed.set_footer(text="Fairyland Online Database")
-            await interaction.followup.send(embed=embed)
-        else:
-            await interaction.followup.send(f"❌ No items found for skill **'{skill_name}'**.")
-            
-    except Exception as e:
-        print(f"Skill list error: {e}")
-        await interaction.followup.send(f"❌ An error occurred while fetching the skill list.")
-
-token = os.environ.get("DISCORD_TOKEN")
-if not token:
-    print("ERROR: DISCORD_TOKEN environment variable is missing!")
-else:
-    bot.run(token)
+                    # 修改后的标签 (Location 地点)
+                    embed.add_field(name="Location (地点)", value=loc_display, inline=
