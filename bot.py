@@ -138,6 +138,7 @@ async def search_command(interaction: discord.Interaction, name: str):
                 cn_name = str(row['Item_CN']) if (has_cn_item and pd.notna(row.get('Item_CN'))) else item_name
                 title = f"📦 物品資訊: {item_name} ({cn_name})" if cn_name != item_name else f"📦 物品資訊: {item_name}"
                 
+                # 獲取英文 WorkSkill
                 work_skill_val = 'N/A'
                 for col in ['Work Skill', 'WorkSkill']:
                     if col in df.columns and pd.notna(row.get(col)):
@@ -146,6 +147,7 @@ async def search_command(interaction: discord.Interaction, name: str):
                 if work_skill_val == 'N/A' and len(df.columns) > 0:
                     work_skill_val = str(row.iloc[0])
 
+                # 獲取中文 WorkSkill_CN
                 work_skill_cn = str(row['WorkSkill_CN']) if ('WorkSkill_CN' in df.columns and pd.notna(row.get('WorkSkill_CN'))) else ''
                 
                 if work_skill_cn and work_skill_cn.lower() != 'nan':
@@ -157,14 +159,18 @@ async def search_command(interaction: discord.Interaction, name: str):
                 
                 embed = discord.Embed(title=title, color=discord.Color.blue())
                 
-                # 改為繁體中文標籤
                 embed.add_field(name="Work Skill (技能)", value=work_skill_display, inline=True)
                 embed.add_field(name="Required Level (等級)", value=level_val, inline=True)
                 
-                if 'Location' in df.columns and pd.notna(row.get('Location')):
-                    loc = str(row['Location'])
-                    loc_cn = str(row['Location_CN']) if ('Location_CN' in df.columns and pd.notna(row.get('Location_CN'))) else loc
-                    loc_display = f"{loc}\n{loc_cn}" if loc_cn != loc else loc
+                # 處理 G 欄 (Location) 與 H 欄 (Location_CN)
+                loc_str = str(row['Location']) if 'Location' in df.columns and pd.notna(row.get('Location')) else ''
+                loc_cn_str = str(row['Location_CN']) if 'Location_CN' in df.columns and pd.notna(row.get('Location_CN')) else ''
+                
+                if loc_str and loc_str.lower() != 'nan':
+                    if loc_cn_str and loc_cn_str.lower() != 'nan':
+                        loc_display = f"{loc_str}\n{loc_cn_str}"
+                    else:
+                        loc_display = loc_str
                     embed.add_field(name="Location (地點)", value=loc_display, inline=False)
                     
                 if 'Effects' in df.columns and pd.notna(row.get('Effects')):
@@ -176,7 +182,6 @@ async def search_command(interaction: discord.Interaction, name: str):
                 if 'Exp' in df.columns and pd.notna(row.get('Exp')):
                     embed.add_field(name="EXP (經驗)", value=str(row['Exp']), inline=True)
                     
-                # 底部數據庫名稱繁體化
                 db_display = f"{sheet_name}基礎技能" if sheet_name == "Basic" else sheet_name
                 embed.set_footer(text=f"Database : {db_display} | Source ： Ahgang/知足常樂資料庫")
                 
@@ -188,7 +193,7 @@ async def search_command(interaction: discord.Interaction, name: str):
         
     except Exception as e:
         print(f"Search error: {e}")
-        await interaction.followup.send(f"❌ 搜尋資料庫时發生錯誤。")
+        await interaction.followup.send(f"❌ 搜尋資料庫時發生錯誤。")
 
 # --- /skill Command ---
 @bot.tree.command(name="skill", description="View a sorted list of all items and recipes for a specific Work Skill.")
@@ -242,7 +247,7 @@ async def skill_command(interaction: discord.Interaction, skill_name: str):
             
     except Exception as e:
         print(f"Skill list error: {e}")
-        await interaction.followup.send(f"❌ 獲取技能清單时發生錯誤。")
+        await interaction.followup.send(f"❌ 獲取技能清單時發生錯誤。")
 
 token = os.environ.get("DISCORD_TOKEN")
 if not token:
