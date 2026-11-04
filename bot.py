@@ -44,8 +44,38 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
+# --- Autocomplete Helper for Live Hints ---
+async def item_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    choices = []
+    try:
+        target = current.strip().lower()
+        for sheet_name, url in SHEETS.items():
+            resp = requests.get(url)
+            resp.encoding = 'utf-8'
+            df = pd.read_csv(io.StringIO(resp.text))
+            df.columns = df.columns.str.strip()
+            
+            if 'Item' in df.columns:
+                for item in df['Item'].dropna().astype(str):
+                    if target in item.lower():
+                        if item not in [c.name for c in choices]:
+                            choices.append(app_commands.Choice(name=item, value=item))
+            # Also check Chinese items if present
+            if 'Item_CN' in df.columns:
+                for item_cn in df['Item_CN'].dropna().astype(str):
+                    if target in item_cn.lower():
+                        if item_cn not in [c.name for c in choices]:
+                            choices.append(app_commands.Choice(name=item_cn, value=item_cn))
+    except Exception as e:
+        print(f"Autocomplete error: {e}")
+        
+    # Discord limits autocomplete choices to a max of 25 items
+    return choices[:25]
+
+# --- Universal /search Command with Live Autocomplete Hints ---
 @bot.tree.command(name="search", description="Search for any item, skill, or recipe across all databases.")
-@app_commands.describe(name="The name of the item to search (e.g. Apple or Ginger Tea)")
+@app_commands.describe(name="Type part of the item name to see live suggestions")
+@app_commands.autocomplete(name=item_autocomplete)
 async def search_command(interaction: discord.Interaction, name: str):
     await interaction.response.defer()
     target = name.strip().lower()
@@ -79,7 +109,6 @@ async def search_command(interaction: discord.Interaction, name: str):
                 cn_name = str(row['Item_CN']) if (has_cn_item and pd.notna(row.get('Item_CN'))) else item_name
                 title = f"📦 Item Info: {item_name} ({cn_name})" if cn_name != item_name else f"📦 Item Info: {item_name}"
                 
-                # Grab Work Skill (supports both 'Work Skill' and 'WorkSkill' headers, or falls back to column A)
                 work_skill_val = 'N/A'
                 for col in ['Work Skill', 'WorkSkill']:
                     if col in df.columns and pd.notna(row.get(col)):
@@ -94,22 +123,18 @@ async def search_command(interaction: discord.Interaction, name: str):
                 embed.add_field(name="Work Skill", value=work_skill_val, inline=True)
                 embed.add_field(name="Required Level", value=level_val, inline=True)
                 
-                # Location (if available in Basic tab)
                 if 'Location' in df.columns and pd.notna(row.get('Location')):
                     loc = str(row['Location'])
                     loc_cn = str(row['Location_CN']) if ('Location_CN' in df.columns and pd.notna(row.get('Location_CN'))) else loc
                     loc_display = f"{loc}\n{loc_cn}" if loc_cn != loc else loc
                     embed.add_field(name="Location", value=loc_display, inline=False)
                     
-                # Effects (if available)
                 if 'Effects' in df.columns and pd.notna(row.get('Effects')):
                     embed.add_field(name="Effects", value=str(row['Effects']), inline=False)
                     
-                # Ingredients (if available in Advanced/Weapon/Armor)
                 if 'Ingredients' in df.columns and pd.notna(row.get('Ingredients')):
                     embed.add_field(name="Ingredients", value=str(row['Ingredients']), inline=False)
                     
-                # EXP (if available)
                 if 'Exp' in df.columns and pd.notna(row.get('Exp')):
                     embed.add_field(name="EXP", value=str(row['Exp']), inline=True)
                     
