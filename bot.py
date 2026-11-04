@@ -108,8 +108,8 @@ async def skill_autocomplete(interaction: discord.Interaction, current: str) -> 
     return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
 
 # --- Universal /search Command ---
-@bot.tree.command(name="search", description="Search for any item or recipe")
-@app_commands.describe(name="Type item name")
+@bot.tree.command(name="search", description="Search for any item, skill, or recipe across all databases.")
+@app_commands.describe(name="Type part of the item name to see live suggestions")
 @app_commands.autocomplete(name=item_autocomplete)
 async def search_command(interaction: discord.Interaction, name: str):
     await interaction.response.defer()
@@ -138,6 +138,7 @@ async def search_command(interaction: discord.Interaction, name: str):
                 cn_name = str(row['Item_CN']) if (has_cn_item and pd.notna(row.get('Item_CN'))) else item_name
                 title = f"📦 Item Info: {item_name} ({cn_name})" if cn_name != item_name else f"📦 Item Info: {item_name}"
                 
+                # 获取英文 WorkSkill
                 work_skill_val = 'N/A'
                 for col in ['Work Skill', 'WorkSkill']:
                     if col in df.columns and pd.notna(row.get(col)):
@@ -146,11 +147,20 @@ async def search_command(interaction: discord.Interaction, name: str):
                 if work_skill_val == 'N/A' and len(df.columns) > 0:
                     work_skill_val = str(row.iloc[0])
 
+                # 自动检查并获取表格里的中文 WorkSkill_CN
+                work_skill_cn = str(row['WorkSkill_CN']) if ('WorkSkill_CN' in df.columns and pd.notna(row.get('WorkSkill_CN'))) else ''
+                
+                # 组合显示：Farming (農事) 或 Farming (农事)
+                if work_skill_cn and work_skill_cn.lower() != 'nan':
+                    work_skill_display = f"{work_skill_val} ({work_skill_cn})"
+                else:
+                    work_skill_display = work_skill_val
+
                 level_val = str(row['Level']) if 'Level' in df.columns and pd.notna(row.get('Level')) else 'N/A'
                 
                 embed = discord.Embed(title=title, color=discord.Color.blue())
                 
-                embed.add_field(name="Work Skill (技能)", value=work_skill_val, inline=True)
+                embed.add_field(name="Work Skill (技能)", value=work_skill_display, inline=True)
                 embed.add_field(name="Required Level (等级)", value=level_val, inline=True)
                 
                 if 'Location' in df.columns and pd.notna(row.get('Location')):
@@ -182,8 +192,8 @@ async def search_command(interaction: discord.Interaction, name: str):
         await interaction.followup.send(f"❌ An error occurred while searching the database.")
 
 # --- /skill Command ---
-@bot.tree.command(name="skill", description="View sorted list of items for a work skill")
-@app_commands.describe(skill_name="Type work skill")
+@bot.tree.command(name="skill", description="View a sorted list of all items and recipes for a specific Work Skill.")
+@app_commands.describe(skill_name="Type or select the work skill")
 @app_commands.autocomplete(skill_name=skill_autocomplete)
 async def skill_command(interaction: discord.Interaction, skill_name: str):
     await interaction.response.defer()
