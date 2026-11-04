@@ -44,7 +44,7 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-# --- Autocomplete Helper for Live Hints ---
+# --- Autocomplete for Items ---
 async def item_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     choices = []
     try:
@@ -60,19 +60,44 @@ async def item_autocomplete(interaction: discord.Interaction, current: str) -> l
                     if target in item.lower():
                         if item not in [c.name for c in choices]:
                             choices.append(app_commands.Choice(name=item, value=item))
-            # Also check Chinese items if present
             if 'Item_CN' in df.columns:
                 for item_cn in df['Item_CN'].dropna().astype(str):
                     if target in item_cn.lower():
                         if item_cn not in [c.name for c in choices]:
                             choices.append(app_commands.Choice(name=item_cn, value=item_cn))
     except Exception as e:
-        print(f"Autocomplete error: {e}")
-        
-    # Discord limits autocomplete choices to a max of 25 items
+        print(f"Item autocomplete error: {e}")
     return choices[:25]
 
-# --- Universal /search Command with Live Autocomplete Hints ---
+# --- Autocomplete for Work Skills / Categories ---
+async def skill_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    skills = set()
+    try:
+        target = current.strip().lower()
+        for sheet_name, url in SHEETS.items():
+            resp = requests.get(url)
+            resp.encoding = 'utf-8'
+            df = pd.read_csv(io.StringIO(resp.text))
+            df.columns = df.columns.str.strip()
+            
+            # Find work skill column (usually 'WorkSkill', 'Work Skill', or Column A)
+            col_to_check = None
+            for col in ['WorkSkill', 'Work Skill']:
+                if col in df.columns:
+                    col_to_check = col
+                    break
+            if not col_to_check and len(df.columns) > 0:
+                col_to_check = df.columns[0]
+                
+            if col_to_check:
+                for val in df[col_to_check].dropna().astype(str):
+                    if target in val.lower() and val.lower() not in ['item', 'workskill', 'work skill']:
+                        skills.add(val)
+    except Exception as e:
+        print(f"Skill autocomplete error: {e}")
+    return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
+
+# --- Universal /search Command ---
 @bot.tree.command(name="search", description="Search for any item, skill, or recipe across all databases.")
 @app_commands.describe(name="Type part of the item name to see live suggestions")
 @app_commands.autocomplete(name=item_autocomplete)
@@ -147,6 +172,53 @@ async def search_command(interaction: discord.Interaction, name: str):
     except Exception as e:
         print(f"Search error: {e}")
         await interaction.followup.send(f"❌ An error occurred while searching the database.")
+
+# --- New /skill Command (Full List per Work Skill) ---
+@bot.tree.command(name="skill", description="View a full list of all items and recipes for a specific Work Skill.")
+@app_commands.describe(skill_name="Type or select the work skill (e.g. Farming, Apothecary, Abacus)")
+@app_commands.autocomplete(skill_name=skill_autocomplete)
+async def skill_command(interaction: discord.Interaction, skill_name: str):
+    await interaction.response.defer()
+    target = skill_name.strip().lower()
+    results = []
+    
+    try:
+        for sheet_name, url in SHEETS.items():
+            resp = requests.get(url)
+            resp.encoding = 'utf-8'
+            df = pd.read_csv(io.StringIO(resp.text))
+            df.columns = df.columns.str.strip()
+            
+            col_to_check = None
+            for col in ['WorkSkill', 'Work Skill']:
+                if col in df.columns:
+                    col_to_check = col
+                    break
+            if not col_to_check and len(df.columns) > 0:
+                col_to_check = df.columns[0]
+                
+            if not col_to_check or 'Item' not in df.columns:
+                continue
+                
+            matches = df[df[col_to_check].astype(str).str.strip().str.lower() == target]
+            for _, row in matches.iterrows():
+                item = str(row['Item'])
+                lvl = str(row['Level']) if 'Level' in df.columns and pd.notna(row.get('Level')) else 'N/A'
+                results.append(f"• **{item}** (Lvl: {lvl}) `[{sheet_name}]`")
+                
+        if results:
+            desc = "\n".join(results)
+            if len(desc) > 4000:
+                desc = desc[:3996] + "..."
+            embed = discord.Embed(title=f"🛠️ Work Skill List: {skill_name}", description=desc, color=discord.Color.gold())
+            embed.set_footer(text="Fairyland Online Database")
+            await interaction.followup.send(embed=embed)
+        else:
+            await interaction.followup.send(f"❌ No items found for skill **'{skill_name}'**.")
+            
+    except Exception as e:
+        print(f"Skill list error: {e}")
+        await interaction.followup.send(f"❌ An error occurred while fetching the skill list.")
 
 token = os.environ.get("DISCORD_TOKEN")
 if not token:
