@@ -68,9 +68,11 @@ async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
     threading.Thread(target=load_sheets_to_cache, daemon=True).start()
     try:
-        # 強制進行全域指令同步，確保所有新舊伺服器都能讀取到指令
-        synced = await bot.tree.sync()
-        print(f"Successfully synced {len(synced)} global command(s)")
+        # 使用你的伺服器 ID 進行即時強制同步
+        MY_GUILD = discord.Object(id=1561353756170395719)
+        bot.tree.copy_global_to(guild=MY_GUILD)
+        synced = await bot.tree.sync(guild=MY_GUILD)
+        print(f"Successfully synced {len(synced)} command(s) to specific guild.")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
@@ -169,7 +171,6 @@ async def search_command(interaction: discord.Interaction, name: str):
                 embed.add_field(name="Work Skill (技能)", value=work_skill_display, inline=True)
                 embed.add_field(name="Required Level (等級)", value=level_val, inline=True)
                 
-                # 處理 G 欄 (Location) 與 H 欄 (Location_CN)
                 loc_str = str(row['Location']) if 'Location' in df.columns and pd.notna(row.get('Location')) else ''
                 loc_cn_str = str(row['Location_CN']) if 'Location_CN' in df.columns and pd.notna(row.get('Location_CN')) else ''
                 
