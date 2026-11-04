@@ -36,7 +36,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Cache dictionary to store data frames and avoid slow web requests during autocomplete
 cached_dfs = {}
 
 def load_sheets_to_cache():
@@ -54,13 +53,11 @@ def load_sheets_to_cache():
             print("Successfully cached Google Sheets data.")
         except Exception as e:
             print(f"Error caching sheets: {e}")
-        # Refresh cache automatically every 10 minutes
         time.sleep(600)
 
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
-    # Start background thread to load sheet data into memory
     threading.Thread(target=load_sheets_to_cache, daemon=True).start()
     try:
         synced = await bot.tree.sync()
@@ -68,7 +65,7 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-# --- Fast Autocomplete for Items (Using Memory Cache) ---
+# --- Fast Autocomplete for Items ---
 async def item_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     choices = []
     target = current.strip().lower()
@@ -88,7 +85,7 @@ async def item_autocomplete(interaction: discord.Interaction, current: str) -> l
         print(f"Autocomplete error: {e}")
     return choices[:25]
 
-# --- Fast Autocomplete for Work Skills (Using Memory Cache) ---
+# --- Fast Autocomplete for Work Skills ---
 async def skill_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     skills = set()
     target = current.strip().lower()
@@ -181,14 +178,14 @@ async def search_command(interaction: discord.Interaction, name: str):
         print(f"Search error: {e}")
         await interaction.followup.send(f"❌ An error occurred while searching the database.")
 
-# --- /skill Command ---
-@bot.tree.command(name="skill", description="View a full list of all items and recipes for a specific Work Skill.")
+# --- /skill Command (Sorted & Level-First Formatting) ---
+@bot.tree.command(name="skill", description="View a sorted list of all items and recipes for a specific Work Skill.")
 @app_commands.describe(skill_name="Type or select the work skill")
 @app_commands.autocomplete(skill_name=skill_autocomplete)
 async def skill_command(interaction: discord.Interaction, skill_name: str):
     await interaction.response.defer()
     target = skill_name.strip().lower()
-    results = []
+    raw_results = []
     
     try:
         for sheet_name, df in cached_dfs.items():
@@ -206,13 +203,27 @@ async def skill_command(interaction: discord.Interaction, skill_name: str):
             matches = df[df[col_to_check].astype(str).str.strip().str.lower() == target]
             for _, row in matches.iterrows():
                 item = str(row['Item'])
-                lvl = str(row['Level']) if 'Level' in df.columns and pd.notna(row.get('Level')) else 'N/A'
-                results.append(f"• **{item}** (Lvl: {lvl}) `[{sheet_name}]`")
                 
-        if results:
-            desc = "\n".join(results)
+                # Parse level safely for sorting
+                lvl_raw = row.get('Level') if 'Level' in df.columns else '999'
+                try:
+                    lvl_num = int(float(lvl_raw))
+                except:
+                    lvl_num = 999  # Put items without numbers at the bottom
+                    
+                raw_results.append({
+                    'level': lvl_num,
+                    'text': f"• **Lvl {lvl_num}** : {item} `[{sheet_name}]`"
+                })
+                
+        if raw_results:
+            # Sort items numerically by level (lowest to highest)
+            raw_results.sort(key=lambda x: x['level'])
+            
+            desc = "\n".join([r['text'] for r in raw_results])
             if len(desc) > 4000:
                 desc = desc[:3996] + "..."
+                
             embed = discord.Embed(title=f"🛠️ Work Skill List: {skill_name}", description=desc, color=discord.Color.gold())
             embed.set_footer(text="Fairyland Online Database")
             await interaction.followup.send(embed=embed)
@@ -220,8 +231,8 @@ async def skill_command(interaction: discord.Interaction, skill_name: str):
             await interaction.followup.send(f"❌ No items found for skill **'{skill_name}'**.")
             
     except Exception as e:
-        print(f"Skill list error: the database is still loading cache.")
-        await interaction.followup.send(f"❌ Database is still initializing. Please try again in 5 seconds.")
+        print(f"Skill list error: {e}")
+        await interaction.followup.send(f"❌ An error occurred while fetching the skill list.")
 
 token = os.environ.get("DISCORD_TOKEN")
 if not token:
