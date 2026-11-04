@@ -9,17 +9,24 @@ import requests
 import io
 import time
 
+# --- 1. 確保 Render 能夠偵測到 Port 的輕量網頁伺服器 ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"Bot is alive!")
+    
+    def log_message(self, format, *args):
+        # 靜默 HTTP 日誌，保持畫面乾淨
+        return
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    print(f"Web server successfully bound to port {port}")
     server.serve_forever()
 
+# 立即在獨立執行緒啟動網頁伺服器，解決 Port 掃描超時問題
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # -------------------------------------------------------------
@@ -138,7 +145,6 @@ async def search_command(interaction: discord.Interaction, name: str):
                 cn_name = str(row['Item_CN']) if (has_cn_item and pd.notna(row.get('Item_CN'))) else item_name
                 title = f"📦 物品資訊: {item_name} ({cn_name})" if cn_name != item_name else f"📦 物品資訊: {item_name}"
                 
-                # 獲取英文 WorkSkill
                 work_skill_val = 'N/A'
                 for col in ['Work Skill', 'WorkSkill']:
                     if col in df.columns and pd.notna(row.get(col)):
@@ -147,7 +153,6 @@ async def search_command(interaction: discord.Interaction, name: str):
                 if work_skill_val == 'N/A' and len(df.columns) > 0:
                     work_skill_val = str(row.iloc[0])
 
-                # 獲取中文 WorkSkill_CN
                 work_skill_cn = str(row['WorkSkill_CN']) if ('WorkSkill_CN' in df.columns and pd.notna(row.get('WorkSkill_CN'))) else ''
                 
                 if work_skill_cn and work_skill_cn.lower() != 'nan':
@@ -162,7 +167,6 @@ async def search_command(interaction: discord.Interaction, name: str):
                 embed.add_field(name="Work Skill (技能)", value=work_skill_display, inline=True)
                 embed.add_field(name="Required Level (等級)", value=level_val, inline=True)
                 
-                # 處理 G 欄 (Location) 與 H 欄 (Location_CN)
                 loc_str = str(row['Location']) if 'Location' in df.columns and pd.notna(row.get('Location')) else ''
                 loc_cn_str = str(row['Location_CN']) if 'Location_CN' in df.columns and pd.notna(row.get('Location_CN')) else ''
                 
