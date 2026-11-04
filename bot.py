@@ -9,7 +9,7 @@ import requests
 import io
 import time
 
-# --- 1. 確保 Render 能夠偵測到 Port 的輕量網頁伺服器 ---
+# --- 1. Render 專用：背景輕量網頁伺服器（解決 Port 掃描超時） ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -17,7 +17,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot is alive!")
     
     def log_message(self, format, *args):
-        # 靜默 HTTP 日誌，保持畫面乾淨
         return
 
 def run_web_server():
@@ -26,9 +25,11 @@ def run_web_server():
     print(f"Web server successfully bound to port {port}")
     server.serve_forever()
 
-# 立即在獨立執行緒啟動網頁伺服器，解決 Port 掃描超時問題
+# 立即在背景執行緒啟動網頁伺服器
 threading.Thread(target=run_web_server, daemon=True).start()
 
+# -------------------------------------------------------------
+# Google Sheets 設定
 # -------------------------------------------------------------
 SHEET_ID = "1FiReFPYNbgFhgLcNuZ43bxtrJ9R92vqKpuD6OQDwKjo"
 SHEETS = {
@@ -67,12 +68,13 @@ async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
     threading.Thread(target=load_sheets_to_cache, daemon=True).start()
     try:
+        # 強制進行全域指令同步，確保所有新舊伺服器都能讀取到指令
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} command(s)")
+        print(f"Successfully synced {len(synced)} global command(s)")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-# --- Fast Autocomplete for Items ---
+# --- 物品自動完成 (Autocomplete) ---
 async def item_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     choices = []
     target = current.strip().lower()
@@ -92,7 +94,7 @@ async def item_autocomplete(interaction: discord.Interaction, current: str) -> l
         print(f"Autocomplete error: {e}")
     return choices[:25]
 
-# --- Fast Autocomplete for Work Skills ---
+# --- 工作技能自動完成 (Autocomplete) ---
 async def skill_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     skills = set()
     target = current.strip().lower()
@@ -114,7 +116,7 @@ async def skill_autocomplete(interaction: discord.Interaction, current: str) -> 
         print(f"Skill autocomplete error: {e}")
     return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
 
-# --- Universal /search Command ---
+# --- /search 指令 ---
 @bot.tree.command(name="search", description="Search for any item, skill, or recipe across all databases.")
 @app_commands.describe(name="Type part of the item name to see live suggestions")
 @app_commands.autocomplete(name=item_autocomplete)
@@ -167,6 +169,7 @@ async def search_command(interaction: discord.Interaction, name: str):
                 embed.add_field(name="Work Skill (技能)", value=work_skill_display, inline=True)
                 embed.add_field(name="Required Level (等級)", value=level_val, inline=True)
                 
+                # 處理 G 欄 (Location) 與 H 欄 (Location_CN)
                 loc_str = str(row['Location']) if 'Location' in df.columns and pd.notna(row.get('Location')) else ''
                 loc_cn_str = str(row['Location_CN']) if 'Location_CN' in df.columns and pd.notna(row.get('Location_CN')) else ''
                 
@@ -199,7 +202,7 @@ async def search_command(interaction: discord.Interaction, name: str):
         print(f"Search error: {e}")
         await interaction.followup.send(f"❌ 搜尋資料庫時發生錯誤。")
 
-# --- /skill Command ---
+# --- /skill 指令 ---
 @bot.tree.command(name="skill", description="View a sorted list of all items and recipes for a specific Work Skill.")
 @app_commands.describe(skill_name="Type or select the work skill")
 @app_commands.autocomplete(skill_name=skill_autocomplete)
