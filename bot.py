@@ -7,6 +7,7 @@ from discord import app_commands
 import pandas as pd
 import requests
 import io
+import time
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -35,26 +36,44 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Cache dictionary to store data frames and avoid slow web requests during autocomplete
+cached_dfs = {}
+
+def load_sheets_to_cache():
+    global cached_dfs
+    while True:
+        try:
+            new_dfs = {}
+            for sheet_name, url in SHEETS.items():
+                resp = requests.get(url)
+                resp.encoding = 'utf-8'
+                df = pd.read_csv(io.StringIO(resp.text))
+                df.columns = df.columns.str.strip()
+                new_dfs[sheet_name] = df
+            cached_dfs = new_dfs
+            print("Successfully cached Google Sheets data.")
+        except Exception as e:
+            print(f"Error caching sheets: {e}")
+        # Refresh cache automatically every 10 minutes
+        time.sleep(600)
+
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
+    # Start background thread to load sheet data into memory
+    threading.Thread(target=load_sheets_to_cache, daemon=True).start()
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} command(s)")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-# --- Autocomplete for Items ---
+# --- Fast Autocomplete for Items (Using Memory Cache) ---
 async def item_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     choices = []
+    target = current.strip().lower()
     try:
-        target = current.strip().lower()
-        for sheet_name, url in SHEETS.items():
-            resp = requests.get(url)
-            resp.encoding = 'utf-8'
-            df = pd.read_csv(io.StringIO(resp.text))
-            df.columns = df.columns.str.strip()
-            
+        for sheet_name, df in cached_dfs.items():
             if 'Item' in df.columns:
                 for item in df['Item'].dropna().astype(str):
                     if target in item.lower():
@@ -66,21 +85,15 @@ async def item_autocomplete(interaction: discord.Interaction, current: str) -> l
                         if item_cn not in [c.name for c in choices]:
                             choices.append(app_commands.Choice(name=item_cn, value=item_cn))
     except Exception as e:
-        print(f"Item autocomplete error: {e}")
+        print(f"Autocomplete error: {e}")
     return choices[:25]
 
-# --- Autocomplete for Work Skills / Categories ---
+# --- Fast Autocomplete for Work Skills (Using Memory Cache) ---
 async def skill_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     skills = set()
+    target = current.strip().lower()
     try:
-        target = current.strip().lower()
-        for sheet_name, url in SHEETS.items():
-            resp = requests.get(url)
-            resp.encoding = 'utf-8'
-            df = pd.read_csv(io.StringIO(resp.text))
-            df.columns = df.columns.str.strip()
-            
-            # Find work skill column (usually 'WorkSkill', 'Work Skill', or Column A)
+        for sheet_name, df in cached_dfs.items():
             col_to_check = None
             for col in ['WorkSkill', 'Work Skill']:
                 if col in df.columns:
@@ -105,16 +118,9 @@ async def search_command(interaction: discord.Interaction, name: str):
     await interaction.response.defer()
     target = name.strip().lower()
     
-    sheets_to_check = ["Basic", "Advanced", "Weapon", "Armor"]
-    
     try:
-        for sheet_name in sheets_to_check:
-            url = SHEETS[sheet_name]
-            resp = requests.get(url)
-            resp.encoding = 'utf-8'
-            df = pd.read_csv(io.StringIO(resp.text))
-            df.columns = df.columns.str.strip()
-            
+        found = False
+        for sheet_name, df in cached_dfs.items():
             if 'Item' not in df.columns:
                 continue
                 
@@ -129,6 +135,7 @@ async def search_command(interaction: discord.Interaction, name: str):
                 
             if not matches.empty:
                 row = matches.iloc[0]
+                found = True
                 
                 item_name = str(row['Item'])
                 cn_name = str(row['Item_CN']) if (has_cn_item and pd.notna(row.get('Item_CN'))) else item_name
@@ -165,17 +172,18 @@ async def search_command(interaction: discord.Interaction, name: str):
                     
                 embed.set_footer(text=f"Database: {sheet_name} | Fairyland Online")
                 await interaction.followup.send(embed=embed)
-                return
+                break
                 
-        await interaction.followup.send(f"❌ Sorry, **'{name}'** was not found in any database.")
+        if not found:
+            await interaction.followup.send(f"❌ Sorry, **'{name}'** was not found in any database.")
         
     except Exception as e:
         print(f"Search error: {e}")
         await interaction.followup.send(f"❌ An error occurred while searching the database.")
 
-# --- New /skill Command (Full List per Work Skill) ---
+# --- /skill Command ---
 @bot.tree.command(name="skill", description="View a full list of all items and recipes for a specific Work Skill.")
-@app_commands.describe(skill_name="Type or select the work skill (e.g. Farming, Apothecary, Abacus)")
+@app_commands.describe(skill_name="Type or select the work skill")
 @app_commands.autocomplete(skill_name=skill_autocomplete)
 async def skill_command(interaction: discord.Interaction, skill_name: str):
     await interaction.response.defer()
@@ -183,12 +191,7 @@ async def skill_command(interaction: discord.Interaction, skill_name: str):
     results = []
     
     try:
-        for sheet_name, url in SHEETS.items():
-            resp = requests.get(url)
-            resp.encoding = 'utf-8'
-            df = pd.read_csv(io.StringIO(resp.text))
-            df.columns = df.columns.str.strip()
-            
+        for sheet_name, df in cached_dfs.items():
             col_to_check = None
             for col in ['WorkSkill', 'Work Skill']:
                 if col in df.columns:
@@ -217,8 +220,8 @@ async def skill_command(interaction: discord.Interaction, skill_name: str):
             await interaction.followup.send(f"❌ No items found for skill **'{skill_name}'**.")
             
     except Exception as e:
-        print(f"Skill list error: {e}")
-        await interaction.followup.send(f"❌ An error occurred while fetching the skill list.")
+        print(f"Skill list error: the database is still loading cache.")
+        await interaction.followup.send(f"❌ Database is still initializing. Please try again in 5 seconds.")
 
 token = os.environ.get("DISCORD_TOKEN")
 if not token:
