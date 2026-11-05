@@ -127,11 +127,12 @@ def search_item_in_cache(name: str):
                 embed.add_field(name="Location (地點)", value=loc_display, inline=False)
                 
             if 'Effects' in df.columns and pd.notna(row.get('Effects')):
-                embed.add_field(name="Effects (效果)", value=str(row['Effects']), inline=False)
+                eff_str = str(row['Effects']).replace('\r', '').replace('\n', ' ')
+                embed.add_field(name="Effects (效果)", value=eff_str, inline=False)
                 
             if 'Ingredients' in df.columns and pd.notna(row.get('Ingredients')):
-                ing_str = str(row['Ingredients'])
-                ing_cn = str(row['Ingredients_CN']) if ('Ingredients_CN' in df.columns and pd.notna(row.get('Ingredients_CN'))) else ''
+                ing_str = str(row['Ingredients']).replace('\r', '').replace('\n', ' ')
+                ing_cn = str(row['Ingredients_CN']).replace('\r', '').replace('\n', ' ') if ('Ingredients_CN' in df.columns and pd.notna(row.get('Ingredients_CN'))) else ''
                 ing_display = f"{ing_str} | {ing_cn}" if ing_cn and ing_cn.lower() != 'nan' else ing_str
                 embed.add_field(name="Ingredients (原料)", value=ing_display, inline=False)
                 
@@ -182,7 +183,7 @@ async def skill_autocomplete(interaction: discord.Interaction, current: str) -> 
         print(f"Skill autocomplete error: {e}")
     return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
 
-# --- 核心技能清單建構函式（強制原料英文與中文合併為單行顯示） ---
+# --- 核心技能清單建構函式（清除表格內的內部換行，強制單行顯示） ---
 def build_skill_embed(skill_name: str):
     converted_skill_name = converter.convert(skill_name)
     target = converted_skill_name.strip().lower()
@@ -222,9 +223,9 @@ def build_skill_embed(skill_name: str):
                 except:
                     lvl_num = 999 
 
-                effects_val = str(row['Effects']) if ('Effects' in df.columns and pd.notna(row.get('Effects'))) else ''
-                ing_val = str(row['Ingredients']) if ('Ingredients' in df.columns and pd.notna(row.get('Ingredients'))) else ''
-                ing_cn_val = str(row['Ingredients_CN']) if ('Ingredients_CN' in df.columns and pd.notna(row.get('Ingredients_CN'))) else ''
+                effects_val = str(row['Effects']).replace('\r', '').replace('\n', ' ') if ('Effects' in df.columns and pd.notna(row.get('Effects'))) else ''
+                ing_val = str(row['Ingredients']).replace('\r', '').replace('\n', ' ') if ('Ingredients' in df.columns and pd.notna(row.get('Ingredients'))) else ''
+                ing_cn_val = str(row['Ingredients_CN']).replace('\r', '').replace('\n', ' ') if ('Ingredients_CN' in df.columns and pd.notna(row.get('Ingredients_CN'))) else ''
                 
                 line_parts = [f"• **Lvl {lvl_num}** : {item_display}"]
                 
@@ -232,7 +233,6 @@ def build_skill_embed(skill_name: str):
                     line_parts.append(f"  └ Effects (效果): `{effects_val}`")
                 
                 if ing_val and ing_val.lower() != 'nan':
-                    # 嚴格確保英文與中文材料在同一個字串中，以「 | 」隔開並放在同一行
                     if ing_cn_val and ing_cn_val.lower() != 'nan':
                         ing_display = f"{ing_val} | {ing_cn_val}"
                     else:
