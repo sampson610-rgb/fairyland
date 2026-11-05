@@ -183,7 +183,7 @@ async def skill_autocomplete(interaction: discord.Interaction, current: str) -> 
         print(f"Skill autocomplete error: {e}")
     return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
 
-# --- 核心技能清單建構函式（原料英文與中文分行上下顯示） ---
+# --- 核心技能清單建構函式（原料標題後強制換行，中文原料獨立一行顯示） ---
 def build_skill_embed(skill_name: str):
     converted_skill_name = converter.convert(skill_name)
     target = converted_skill_name.strip().lower()
@@ -233,9 +233,11 @@ def build_skill_embed(skill_name: str):
                     line_parts.append(f"  └ Effects (效果): `{effects_val}`")
                 
                 if ing_val and ing_val.lower() != 'nan':
-                    line_parts.append(f"  └ Ingredients (原料): `{ing_val}`")
+                    # 在 Ingredients 標題後方直接換行，讓中文原料獨立顯示在下一行
                     if ing_cn_val and ing_cn_val.lower() != 'nan':
-                        line_parts.append(f"    `{ing_cn_val}`")
+                        line_parts.append(f"  └ Ingredients (原料):\n    `{ing_val}`\n    `{ing_cn_val}`")
+                    else:
+                        line_parts.append(f"  └ Ingredients (原料):\n    `{ing_val}`")
 
                 text_line = "\n".join(line_parts)
                     
