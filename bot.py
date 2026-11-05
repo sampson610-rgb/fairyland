@@ -186,8 +186,45 @@ async def skill_autocomplete(interaction: discord.Interaction, current: str) -> 
         print(f"Skill autocomplete error: {e}")
     return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
 
-# --- 核心技能清單建構函式（原料英文帶框單行、中文原料獨立一行顯示） ---
-def build_skill_embed(skill_name: str):
+# --- 支援分頁按鈕的 View 類別 ---
+class SkillPaginatorView(discord.ui.View):
+    def __init__(self, chunks, skill_name):
+        super().__init__(timeout=180)
+        self.chunks = chunks
+        self.skill_name = skill_name
+        self.current_page = 0
+        self.update_buttons()
+
+    def update_buttons(self):
+        self.prev_button.disabled = self.current_page == 0
+        self.next_button.disabled = self.current_page == len(self.chunks) - 1
+
+    def get_current_embed(self):
+        desc = "\n".join(self.chunks[self.current_page])
+        embed = discord.Embed(
+            title=f"🛠️ Work Skill List: {self.skill_name} (Page {self.current_page + 1}/{len(self.chunks)})",
+            description=desc,
+            color=discord.Color.gold()
+        )
+        embed.set_footer(text="Source: Ahgang/知足常樂資料庫")
+        return embed
+
+    @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.primary)
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.update_buttons()
+            await interaction.response.edit_message(embed=self.get_current_embed(), view=self)
+
+    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.primary)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page < len(self.chunks) - 1:
+            self.current_page += 1
+            self.update_buttons()
+            await interaction.response.edit_message(embed=self.get_current_embed(), view=self)
+
+# --- 核心技能清單建構函式（自動分頁處理） ---
+def get_skill_paginator(skill_name: str):
     converted_skill_name = converter.convert(skill_name)
     target = converted_skill_name.strip().lower()
     raw_results = []
@@ -250,16 +287,29 @@ def build_skill_embed(skill_name: str):
                 
         if raw_results:
             raw_results.sort(key=lambda x: x['level'])
-            desc = "\n".join([r['text'] for r in raw_results])
-            if len(desc) > 4000:
-                desc = desc[:3996] + "..."
+            
+            # 將長內容拆成多個 chunks (每個 chunk 控制在約 3500 字元以內避免超出限制)
+            chunks = []
+            current_chunk = []
+            current_length = 0
+            
+            for r in raw_results:
+                line_len = len(r['text']) + 1
+                if current_length + line_len > 3500:
+                    chunks.append(current_chunk)
+                    current_chunk = [r['text']]
+                    current_length = line_len
+                else:
+                    current_chunk.append(r['text'])
+                    current_length += line_len
+            if current_chunk:
+                chunks.append(current_chunk)
                 
-            embed = discord.Embed(title=f"🛠️ Work Skill List: {skill_name}", description=desc, color=discord.Color.gold())
-            embed.set_footer(text="Source: Ahgang/知足常樂資料庫")
-            return embed
+            view = SkillPaginatorView(chunks, skill_name)
+            return view.get_current_embed(), view
     except Exception as e:
         print(f"Skill list builder error: {e}")
-    return None
+    return None, None
 
 # --- 1. 前綴指令：!search ---
 @bot.command(name="search")
@@ -280,9 +330,9 @@ async def prefix_skill(ctx, *, skill_name: str = None):
         await ctx.send("❓ Please provide a work skill name. Example: `!skill Apothecary`")
         return
     
-    embed = build_skill_embed(skill_name)
+    embed, view = get_skill_paginator(skill_name)
     if embed:
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, view=view)
     else:
         await ctx.send(f"❌ No items found for skill **'{skill_name}'**.")
 
@@ -304,9 +354,9 @@ async def search_command(interaction: discord.Interaction, name: str):
 @app_commands.autocomplete(skill_name=skill_autocomplete)
 async def skill_command(interaction: discord.Interaction, skill_name: str):
     await interaction.response.defer()
-    embed = build_skill_embed(skill_name)
+    embed, view = get_skill_paginator(skill_name)
     if embed:
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, view=view)
     else:
         await interaction.followup.send(f"❌ No items found for skill **'{skill_name}'**.")
 
