@@ -133,7 +133,7 @@ def search_item_in_cache(name: str):
             if 'Ingredients' in df.columns and pd.notna(row.get('Ingredients')):
                 ing_str = str(row['Ingredients']).replace('\r', '').replace('\n', ' ')
                 ing_cn = str(row['Ingredients_CN']).replace('\r', '').replace('\n', ' ') if ('Ingredients_CN' in df.columns and pd.notna(row.get('Ingredients_CN'))) else ''
-                ing_display = f"{ing_str} | {ing_cn}" if ing_cn and ing_cn.lower() != 'nan' else ing_str
+                ing_display = f"{ing_str}\n{ing_cn}" if ing_cn and ing_cn.lower() != 'nan' else ing_str
                 embed.add_field(name="Ingredients (原料)", value=ing_display, inline=False)
                 
             if 'Exp' in df.columns and pd.notna(row.get('Exp')):
@@ -183,7 +183,7 @@ async def skill_autocomplete(interaction: discord.Interaction, current: str) -> 
         print(f"Skill autocomplete error: {e}")
     return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
 
-# --- 核心技能清單建構函式（清除表格內的內部換行，強制單行顯示） ---
+# --- 核心技能清單建構函式（原料英文與中文分行上下顯示） ---
 def build_skill_embed(skill_name: str):
     converted_skill_name = converter.convert(skill_name)
     target = converted_skill_name.strip().lower()
@@ -233,11 +233,9 @@ def build_skill_embed(skill_name: str):
                     line_parts.append(f"  └ Effects (效果): `{effects_val}`")
                 
                 if ing_val and ing_val.lower() != 'nan':
+                    line_parts.append(f"  └ Ingredients (原料): `{ing_val}`")
                     if ing_cn_val and ing_cn_val.lower() != 'nan':
-                        ing_display = f"{ing_val} | {ing_cn_val}"
-                    else:
-                        ing_display = ing_val
-                    line_parts.append(f"  └ Ingredients (原料): `{ing_display}`")
+                        line_parts.append(f"    `{ing_cn_val}`")
 
                 text_line = "\n".join(line_parts)
                     
