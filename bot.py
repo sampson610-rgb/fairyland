@@ -133,7 +133,7 @@ def search_item_in_cache(name: str):
             if 'Ingredients' in df.columns and pd.notna(row.get('Ingredients')):
                 ing_str = str(row['Ingredients']).replace('\r', '').replace('\n', ' ')
                 ing_cn = str(row['Ingredients_CN']).replace('\r', '').replace('\n', ' ') if ('Ingredients_CN' in df.columns and pd.notna(row.get('Ingredients_CN'))) else ''
-                if ing_cn and ing_cn.lower() != 'nan':
+                if ing_cn and ing_cn.lower() != 'nan' and ing_cn.strip() != '':
                     ing_display = f"`{ing_str}`\n{ing_cn}"
                 else:
                     ing_display = f"`{ing_str}`"
@@ -223,7 +223,7 @@ class SkillPaginatorView(discord.ui.View):
             self.update_buttons()
             await interaction.response.edit_message(embed=self.get_current_embed(), view=self)
 
-# --- 核心技能清單建構函式（自動分頁處理） ---
+# --- 核心技能清單建構函式（套用至所有工作技能，完整顯示 Ingredients 與 Ingredients_CN） ---
 def get_skill_paginator(skill_name: str):
     converted_skill_name = converter.convert(skill_name)
     target = converted_skill_name.strip().lower()
@@ -272,8 +272,8 @@ def get_skill_paginator(skill_name: str):
                 if effects_val and effects_val.lower() != 'nan':
                     line_parts.append(f"  └ Effects (效果): `{effects_val}`")
                 
-                if ing_val and ing_val.lower() != 'nan':
-                    if ing_cn_val and ing_cn_val.lower() != 'nan':
+                if ing_val and ing_val.lower() != 'nan' and ing_val.strip() != '' and ing_val.lower() != 'nan':
+                    if ing_cn_val and ing_cn_val.lower() != 'nan' and ing_cn_val.strip() != '':
                         line_parts.append(f"  └ Ingredients (原料):\n    `{ing_val}`\n    {ing_cn_val}")
                     else:
                         line_parts.append(f"  └ Ingredients (原料):\n    `{ing_val}`")
@@ -288,7 +288,6 @@ def get_skill_paginator(skill_name: str):
         if raw_results:
             raw_results.sort(key=lambda x: x['level'])
             
-            # 將長內容拆成多個 chunks (每個 chunk 控制在約 3500 字元以內避免超出限制)
             chunks = []
             current_chunk = []
             current_length = 0
