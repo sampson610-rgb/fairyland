@@ -155,7 +155,7 @@ async def item_autocomplete(interaction: discord.Interaction, current: str) -> l
         print(f"Autocomplete error: {e}")
     return choices[:25]
 
-# --- Work Skill Autocomplete (Supports both English and Chinese columns) ---
+# --- Work Skill Autocomplete ---
 async def skill_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     skills = set()
     target = current.strip().lower()
@@ -173,25 +173,8 @@ async def skill_autocomplete(interaction: discord.Interaction, current: str) -> 
         print(f"Skill autocomplete error: {e}")
     return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
 
-# --- 1. Prefix Command: !search ---
-@bot.command(name="search")
-async def prefix_search(ctx, *, name: str = None):
-    if not name:
-        await ctx.send("❓ Please provide an item name. Example: `!search apple` or `!search 鮮花`")
-        return
-    embed = search_item_in_cache(name)
-    if embed:
-        await ctx.send(embed=embed)
-    else:
-        await ctx.send(f"❌ Sorry, no item matching **'{name}'** was found in any database.")
-
-# --- 2. Prefix Command: !skill (Supports English and Chinese work skills) ---
-@bot.command(name="skill")
-async def prefix_skill(ctx, *, skill_name: str = None):
-    if not skill_name:
-        await ctx.send("❓ Please provide a work skill name. Example: `!skill Fishing` or `!skill 釣魚`")
-        return
-    
+# --- Core Skill List Builder (Includes English + Chinese Item Names) ---
+def build_skill_embed(skill_name: str):
     target = skill_name.strip().lower()
     raw_results = []
     try:
@@ -216,6 +199,14 @@ async def prefix_skill(ctx, *, skill_name: str = None):
 
             for _, row in matches.iterrows():
                 item = str(row['Item'])
+                cn_item = str(row['Item_CN']) if ('Item_CN' in df.columns and pd.notna(row.get('Item_CN'))) else ''
+                
+                # Format display item name with Chinese if available
+                if cn_item and cn_item.lower() != 'nan' and cn_item != item:
+                    item_display = f"{item} ({cn_item})"
+                else:
+                    item_display = item
+
                 lvl_raw = row.get('Level') if 'Level' in df.columns else '999'
                 try:
                     lvl_num = int(float(lvl_raw))
@@ -224,7 +215,7 @@ async def prefix_skill(ctx, *, skill_name: str = None):
                     
                 raw_results.append({
                     'level': lvl_num,
-                    'text': f"• **Lvl {lvl_num}** : {item} `[{sheet_name}]`"
+                    'text': f"• **Lvl {lvl_num}** : {item_display} `[{sheet_name}]`"
                 })
                 
         if raw_results:
@@ -235,12 +226,35 @@ async def prefix_skill(ctx, *, skill_name: str = None):
                 
             embed = discord.Embed(title=f"🛠️ Work Skill List: {skill_name}", description=desc, color=discord.Color.gold())
             embed.set_footer(text="Source: Ahgang Database")
-            await ctx.send(embed=embed)
-        else:
-            await ctx.send(f"❌ No items found for skill **'{skill_name}'**.")
+            return embed
     except Exception as e:
-        print(f"Prefix skill list error: {e}")
-        await ctx.send("❌ An error occurred while fetching the skill list.")
+        print(f"Skill list builder error: {e}")
+    return None
+
+# --- 1. Prefix Command: !search ---
+@bot.command(name="search")
+async def prefix_search(ctx, *, name: str = None):
+    if not name:
+        await ctx.send("❓ Please provide an item name. Example: `!search apple` or `!search 鮮花`")
+        return
+    embed = search_item_in_cache(name)
+    if embed:
+        await ctx.send(embed=embed)
+    else:
+        await ctx.send(f"❌ Sorry, no item matching **'{name}'** was found in any database.")
+
+# --- 2. Prefix Command: !skill ---
+@bot.command(name="skill")
+async def prefix_skill(ctx, *, skill_name: str = None):
+    if not skill_name:
+        await ctx.send("❓ Please provide a work skill name. Example: `!skill Fishing` or `!skill 釣魚`")
+        return
+    
+    embed = build_skill_embed(skill_name)
+    if embed:
+        await ctx.send(embed=embed)
+    else:
+        await ctx.send(f"❌ No items found for skill **'{skill_name}'**.")
 
 # --- 3. Slash Command: /search ---
 @bot.tree.command(name="search", description="Search for any item, skill, or recipe across all databases.")
@@ -254,62 +268,17 @@ async def search_command(interaction: discord.Interaction, name: str):
     else:
         await interaction.followup.send(f"❌ Sorry, no item matching **'{name}'** was found in any database.")
 
-# --- 4. Slash Command: /skill (Supports English and Chinese work skills) ---
+# --- 4. Slash Command: /skill ---
 @bot.tree.command(name="skill", description="View a sorted list of all items and recipes for a specific Work Skill.")
 @app_commands.describe(skill_name="Type or select the work skill")
 @app_commands.autocomplete(skill_name=skill_autocomplete)
 async def skill_command(interaction: discord.Interaction, skill_name: str):
     await interaction.response.defer()
-    target = skill_name.strip().lower()
-    raw_results = []
-    
-    try:
-        for sheet_name, df in cached_dfs.items():
-            has_ws_cn = 'WorkSkill_CN' in df.columns
-            col_ws = None
-            for col in ['WorkSkill', 'Work Skill']:
-                if col in df.columns:
-                    col_ws = col
-                    break
-            
-            if not col_ws or 'Item' not in df.columns:
-                continue
-
-            if has_ws_cn:
-                matches = df[
-                    (df[col_ws].astype(str).str.strip().str.lower() == target) |
-                    (df['WorkSkill_CN'].astype(str).str.strip().str.lower() == target)
-                ]
-            else:
-                matches = df[df[col_ws].astype(str).str.strip().str.lower() == target]
-
-            for _, row in matches.iterrows():
-                item = str(row['Item'])
-                lvl_raw = row.get('Level') if 'Level' in df.columns else '999'
-                try:
-                    lvl_num = int(float(lvl_raw))
-                except:
-                    lvl_num = 999 
-                    
-                raw_results.append({
-                    'level': lvl_num,
-                    'text': f"• **Lvl {lvl_num}** : {item} `[{sheet_name}]`"
-                })
-                
-        if raw_results:
-            raw_results.sort(key=lambda x: x['level'])
-            desc = "\n".join([r['text'] for r in raw_results])
-            if len(desc) > 4000:
-                desc = desc[:3996] + "..."
-                
-            embed = discord.Embed(title=f"🛠️ Work Skill List: {skill_name}", description=desc, color=discord.Color.gold())
-            embed.set_footer(text="Source: Ahgang Database")
-            await interaction.followup.send(embed=embed)
-        else:
-            await interaction.followup.send(f"❌ No items found for skill **'{skill_name}'**.")
-    except Exception as e:
-        print(f"Skill list error: {e}")
-        await interaction.followup.send(f"❌ An error occurred while fetching the skill list.")
+    embed = build_skill_embed(skill_name)
+    if embed:
+        await interaction.followup.send(embed=embed)
+    else:
+        await interaction.followup.send(f"❌ No items found for skill **'{skill_name}'**.")
 
 token = os.environ.get("DISCORD_TOKEN")
 if not token:
