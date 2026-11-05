@@ -129,7 +129,10 @@ def search_item_in_cache(name: str):
                 embed.add_field(name="Effects", value=str(row['Effects']), inline=False)
                 
             if 'Ingredients' in df.columns and pd.notna(row.get('Ingredients')):
-                embed.add_field(name="Ingredients", value=str(row['Ingredients']), inline=False)
+                ing_str = str(row['Ingredients'])
+                ing_cn = str(row['Ingredients_CN']) if ('Ingredients_CN' in df.columns and pd.notna(row.get('Ingredients_CN'))) else ''
+                ing_display = f"{ing_str} | {ing_cn}" if ing_cn and ing_cn.lower() != 'nan' else ing_str
+                embed.add_field(name="Ingredients", value=ing_display, inline=False)
                 
             if 'Exp' in df.columns and pd.notna(row.get('Exp')):
                 embed.add_field(name="EXP", value=str(row['Exp']), inline=True)
@@ -178,7 +181,7 @@ async def skill_autocomplete(interaction: discord.Interaction, current: str) -> 
         print(f"Skill autocomplete error: {e}")
     return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
 
-# --- 核心技能清單建構函式（支援顯示 Effects 效果） ---
+# --- 核心技能清單建構函式（同時顯示中文材料 Ingredients_CN） ---
 def build_skill_embed(skill_name: str):
     converted_skill_name = converter.convert(skill_name)
     target = converted_skill_name.strip().lower()
@@ -218,11 +221,24 @@ def build_skill_embed(skill_name: str):
                 except:
                     lvl_num = 999 
 
-                # 檢查是否有 Effects 效果欄位
+                # 檢查 Effects 效果
                 effects_val = str(row['Effects']) if ('Effects' in df.columns and pd.notna(row.get('Effects'))) else ''
                 
+                # 檢查 Ingredients 材料與中文材料 Ingredients_CN
+                ing_val = str(row['Ingredients']) if ('Ingredients' in df.columns and pd.notna(row.get('Ingredients'))) else ''
+                ing_cn_val = str(row['Ingredients_CN']) if ('Ingredients_CN' in df.columns and pd.notna(row.get('Ingredients_CN'))) else ''
+                
+                extra_info = []
                 if effects_val and effects_val.lower() != 'nan':
-                    text_line = f"• **Lvl {lvl_num}** : {item_display} | Effects: `{effects_val}`"
+                    extra_info.append(f"Effects: `{effects_val}`")
+                
+                if ing_val and ing_val.lower() != 'nan':
+                    ing_display = f"{ing_val} ({ing_cn_val})" if ing_cn_val and ing_cn_val.lower() != 'nan' else ing_val
+                    extra_info.append(f"Ing: `{ing_display}`")
+
+                details_str = " | ".join(extra_info)
+                if details_str:
+                    text_line = f"• **Lvl {lvl_num}** : {item_display} | {details_str}"
                 else:
                     text_line = f"• **Lvl {lvl_num}** : {item_display}"
                     
