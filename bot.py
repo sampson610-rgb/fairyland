@@ -77,7 +77,7 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-# --- 共用物品搜尋邏輯（單一物品詳細資訊：加入繁體中文標籤） ---
+# --- 共用物品搜尋邏輯（單一物品詳細資訊） ---
 def search_item_in_cache(name: str):
     converted_name = converter.convert(name)
     target = converted_name.strip().lower()
@@ -116,7 +116,6 @@ def search_item_in_cache(name: str):
             
             embed = discord.Embed(title=title, color=discord.Color.blue())
             
-            # 加入繁體中文標籤
             embed.add_field(name="Work Skill (工作技能)", value=work_skill_display, inline=True)
             embed.add_field(name="Required Level (需求等級)", value=level_val, inline=True)
             
@@ -183,7 +182,7 @@ async def skill_autocomplete(interaction: discord.Interaction, current: str) -> 
         print(f"Skill autocomplete error: {e}")
     return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
 
-# --- 核心技能清單建構函式 ---
+# --- 核心技能清單建構函式（支援所有 Basic 與 Advanced 分頁的 Ingredients / Ingredients_CN 顯示） ---
 def build_skill_embed(skill_name: str):
     converted_skill_name = converter.convert(skill_name)
     target = converted_skill_name.strip().lower()
