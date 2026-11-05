@@ -95,11 +95,12 @@ def search_item_in_cache(name: str):
         if 'Item' not in df.columns:
             continue
             
-        has_cn_item = 'Item_CN' in df.columns
+        has_cn_item = 'Item_CN' in df.columns or 'Item CN' in df.columns
         if has_cn_item:
             matches = df[
                 (df['Item'].astype(str).str.strip().str.lower() == target) |
-                (df['Item_CN'].astype(str).str.strip().str.lower() == target)
+                (df.get('Item_CN', pd.Series()).astype(str).str.strip().str.lower() == target) |
+                (df.get('Item CN', pd.Series()).astype(str).str.strip().str.lower() == target)
             ]
         else:
             matches = df[df['Item'].astype(str).str.strip().str.lower() == target]
@@ -228,7 +229,7 @@ class SkillPaginatorView(discord.ui.View):
             self.update_buttons()
             await interaction.response.edit_message(embed=self.get_current_embed(), view=self)
 
-# --- 核心技能清單建構函式（自動適配所有欄位名稱變體） ---
+# --- 核心技能清單建構函式（加入乾淨的空白行區隔每個等級） ---
 def get_skill_paginator(skill_name: str):
     converted_skill_name = converter.convert(skill_name)
     target = converted_skill_name.strip().lower()
@@ -282,7 +283,8 @@ def get_skill_paginator(skill_name: str):
                     else:
                         line_parts.append(f"  └ Ingredients (原料):\n    `{ing_val}`")
 
-                text_line = "\n".join(line_parts)
+                # 在每個項目下方加入空白行 (\n) 讓版面乾淨易讀
+                text_line = "\n".join(line_parts) + "\n"
                     
                 raw_results.append({
                     'level': lvl_num,
