@@ -77,7 +77,7 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-# --- 輔助函式：安全取得欄位值（支援多種常見命名變體） ---
+# --- 輔助函式：安全取得欄位值 ---
 def get_row_value(row, df_columns, possible_keys):
     for key in possible_keys:
         if key in df_columns and pd.notna(row.get(key)):
@@ -130,7 +130,7 @@ def search_item_in_cache(name: str):
             loc_cn_str = get_row_value(row, df.columns, ['Location_CN', 'Location CN'])
             
             if loc_str:
-                loc_display = f"{loc_str}\n{loc_cn_str}" if loc_cn_str else loc_str
+                loc_display = f"`{loc_str}`\n{loc_cn_str}" if loc_cn_str else f"`{loc_str}`"
                 embed.add_field(name="Location (地點)", value=loc_display, inline=False)
                 
             eff_str = get_row_value(row, df.columns, ['Effects', 'Effect'])
@@ -229,7 +229,7 @@ class SkillPaginatorView(discord.ui.View):
             self.update_buttons()
             await interaction.response.edit_message(embed=self.get_current_embed(), view=self)
 
-# --- 核心技能清單建構函式（加入乾淨的空白行區隔每個等級） ---
+# --- 核心技能清單建構函式（支援 Location 與 Ingredients 顯示） ---
 def get_skill_paginator(skill_name: str):
     converted_skill_name = converter.convert(skill_name)
     target = converted_skill_name.strip().lower()
@@ -268,12 +268,20 @@ def get_skill_paginator(skill_name: str):
                 except:
                     lvl_num = 999 
 
+                loc_str = get_row_value(row, df.columns, ['Location'])
+                loc_cn_str = get_row_value(row, df.columns, ['Location_CN', 'Location CN'])
                 effects_val = get_row_value(row, df.columns, ['Effects', 'Effect'])
                 ing_val = get_row_value(row, df.columns, ['Ingredients', 'Ingredient'])
                 ing_cn_val = get_row_value(row, df.columns, ['Ingredients_CN', 'Ingredients CN', 'Ingredient_CN', 'Ingredient CN'])
                 
                 line_parts = [f"• **Lvl {lvl_num}** : {item_display}"]
                 
+                if loc_str:
+                    if loc_cn_str:
+                        line_parts.append(f"  └ Location (地點):\n    `{loc_str}`\n    {loc_cn_str}")
+                    else:
+                        line_parts.append(f"  └ Location (地點):\n    `{loc_str}`")
+
                 if effects_val:
                     line_parts.append(f"  └ Effects (效果): `{effects_val}`")
                 
@@ -283,7 +291,6 @@ def get_skill_paginator(skill_name: str):
                     else:
                         line_parts.append(f"  └ Ingredients (原料):\n    `{ing_val}`")
 
-                # 在每個項目下方加入空白行 (\n) 讓版面乾淨易讀
                 text_line = "\n".join(line_parts) + "\n"
                     
                 raw_results.append({
