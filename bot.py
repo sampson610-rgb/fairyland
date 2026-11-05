@@ -77,6 +77,15 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
+# --- 輔助函式：安全取得欄位值（支援多種常見命名變體） ---
+def get_row_value(row, df_columns, possible_keys):
+    for key in possible_keys:
+        if key in df_columns and pd.notna(row.get(key)):
+            val = str(row[key]).replace('\r', '').replace('\n', ' ').strip()
+            if val and val.lower() != 'nan':
+                return val
+    return ''
+
 # --- 共用物品搜尋邏輯（單一物品詳細資訊） ---
 def search_item_in_cache(name: str):
     converted_name = converter.convert(name)
@@ -98,49 +107,44 @@ def search_item_in_cache(name: str):
         if not matches.empty:
             row = matches.iloc[0]
             item_name = str(row['Item'])
-            cn_name = str(row['Item_CN']) if (has_cn_item and pd.notna(row.get('Item_CN'))) else item_name
+            cn_name = get_row_value(row, df.columns, ['Item_CN', 'Item CN', 'Chinese Item'])
+            if not cn_name:
+                cn_name = item_name
             title = f"📦 Item Info: {item_name} ({cn_name})" if cn_name != item_name else f"📦 Item Info: {item_name}"
             
-            work_skill_val = 'N/A'
-            for col in ['Work Skill', 'WorkSkill']:
-                if col in df.columns and pd.notna(row.get(col)):
-                    work_skill_val = str(row[col])
-                    break
-            if work_skill_val == 'N/A' and len(df.columns) > 0:
-                work_skill_val = str(row.iloc[0])
+            work_skill_val = get_row_value(row, df.columns, ['Work Skill', 'WorkSkill', df.columns[0]])
+            work_skill_cn = get_row_value(row, df.columns, ['WorkSkill_CN', 'Work Skill CN', 'WorkSkill CN'])
+            work_skill_display = f"{work_skill_val} ({work_skill_cn})" if work_skill_cn else work_skill_val
 
-            work_skill_cn = str(row['WorkSkill_CN']) if ('WorkSkill_CN' in df.columns and pd.notna(row.get('WorkSkill_CN'))) else ''
-            work_skill_display = f"{work_skill_val} ({work_skill_cn})" if work_skill_cn and work_skill_cn.lower() != 'nan' else work_skill_val
-
-            level_val = str(row['Level']) if 'Level' in df.columns and pd.notna(row.get('Level')) else 'N/A'
+            level_val = get_row_value(row, df.columns, ['Level'])
+            if not level_val:
+                level_val = 'N/A'
             
             embed = discord.Embed(title=title, color=discord.Color.blue())
             
             embed.add_field(name="Work Skill (工作技能)", value=work_skill_display, inline=True)
             embed.add_field(name="Required Level (需求等級)", value=level_val, inline=True)
             
-            loc_str = str(row['Location']) if 'Location' in df.columns and pd.notna(row.get('Location')) else ''
-            loc_cn_str = str(row['Location_CN']) if 'Location_CN' in df.columns and pd.notna(row.get('Location_CN')) else ''
+            loc_str = get_row_value(row, df.columns, ['Location'])
+            loc_cn_str = get_row_value(row, df.columns, ['Location_CN', 'Location CN'])
             
-            if loc_str and loc_str.lower() != 'nan':
-                loc_display = f"{loc_str}\n{loc_cn_str}" if loc_cn_str and loc_cn_str.lower() != 'nan' else loc_str
+            if loc_str:
+                loc_display = f"{loc_str}\n{loc_cn_str}" if loc_cn_str else loc_str
                 embed.add_field(name="Location (地點)", value=loc_display, inline=False)
                 
-            if 'Effects' in df.columns and pd.notna(row.get('Effects')):
-                eff_str = str(row['Effects']).replace('\r', '').replace('\n', ' ')
+            eff_str = get_row_value(row, df.columns, ['Effects', 'Effect'])
+            if eff_str:
                 embed.add_field(name="Effects (效果)", value=eff_str, inline=False)
                 
-            if 'Ingredients' in df.columns and pd.notna(row.get('Ingredients')):
-                ing_str = str(row['Ingredients']).replace('\r', '').replace('\n', ' ')
-                ing_cn = str(row['Ingredients_CN']).replace('\r', '').replace('\n', ' ') if ('Ingredients_CN' in df.columns and pd.notna(row.get('Ingredients_CN'))) else ''
-                if ing_cn and ing_cn.lower() != 'nan' and ing_cn.strip() != '':
-                    ing_display = f"`{ing_str}`\n{ing_cn}"
-                else:
-                    ing_display = f"`{ing_str}`"
+            ing_str = get_row_value(row, df.columns, ['Ingredients', 'Ingredient'])
+            ing_cn = get_row_value(row, df.columns, ['Ingredients_CN', 'Ingredients CN', 'Ingredient_CN', 'Ingredient CN'])
+            if ing_str:
+                ing_display = f"`{ing_str}`\n{ing_cn}" if ing_cn else f"`{ing_str}`"
                 embed.add_field(name="Ingredients (原料)", value=ing_display, inline=False)
                 
-            if 'Exp' in df.columns and pd.notna(row.get('Exp')):
-                embed.add_field(name="EXP (經驗)", value=str(row['Exp']), inline=True)
+            exp_str = get_row_value(row, df.columns, ['Exp', 'EXP'])
+            if exp_str:
+                embed.add_field(name="EXP (經驗)", value=exp_str, inline=True)
                 
             embed.set_footer(text="Source: Ahgang/知足常樂資料庫")
             return embed
@@ -158,11 +162,12 @@ async def item_autocomplete(interaction: discord.Interaction, current: str) -> l
                     if target in item.lower():
                         if item not in [c.name for c in choices]:
                             choices.append(app_commands.Choice(name=item, value=item))
-            if 'Item_CN' in df.columns:
-                for item_cn in df['Item_CN'].dropna().astype(str):
-                    if target in item_cn.lower():
-                        if item_cn not in [c.name for c in choices]:
-                            choices.append(app_commands.Choice(name=item_cn, value=item_cn))
+            for cn_col in ['Item_CN', 'Item CN']:
+                if cn_col in df.columns:
+                    for item_cn in df[cn_col].dropna().astype(str):
+                        if target in item_cn.lower():
+                            if item_cn not in [c.name for c in choices]:
+                                choices.append(app_commands.Choice(name=item_cn, value=item_cn))
     except Exception as e:
         print(f"Autocomplete error: {e}")
     return choices[:25]
@@ -174,13 +179,13 @@ async def skill_autocomplete(interaction: discord.Interaction, current: str) -> 
     target = converted_current.strip().lower()
     try:
         for sheet_name, df in cached_dfs.items():
-            cols_to_check = [c for c in ['WorkSkill', 'Work Skill', 'WorkSkill_CN'] if c in df.columns]
+            cols_to_check = [c for c in ['WorkSkill', 'Work Skill', 'WorkSkill_CN', 'Work Skill CN'] if c in df.columns]
             if not cols_to_check and len(df.columns) > 0:
                 cols_to_check = [df.columns[0]]
                 
             for col in cols_to_check:
                 for val in df[col].dropna().astype(str):
-                    if target in val.lower() and val.lower() not in ['item', 'workskill', 'work skill', 'workskill_cn']:
+                    if target in val.lower() and val.lower() not in ['item', 'workskill', 'work skill', 'workskill_cn', 'work skill cn']:
                         skills.add(val)
     except Exception as e:
         print(f"Skill autocomplete error: {e}")
@@ -223,57 +228,56 @@ class SkillPaginatorView(discord.ui.View):
             self.update_buttons()
             await interaction.response.edit_message(embed=self.get_current_embed(), view=self)
 
-# --- 核心技能清單建構函式（套用至所有工作技能，完整顯示 Ingredients 與 Ingredients_CN） ---
+# --- 核心技能清單建構函式（自動適配所有欄位名稱變體） ---
 def get_skill_paginator(skill_name: str):
     converted_skill_name = converter.convert(skill_name)
     target = converted_skill_name.strip().lower()
     raw_results = []
     try:
         for sheet_name, df in cached_dfs.items():
-            has_ws_cn = 'WorkSkill_CN' in df.columns
             col_ws = None
-            for col in ['WorkSkill', 'Work Skill']:
+            for col in ['WorkSkill', 'Work Skill', 'WorkSkill_CN', 'Work Skill CN']:
                 if col in df.columns:
                     col_ws = col
                     break
+            if not col_ws and len(df.columns) > 0:
+                col_ws = df.columns[0]
             
             if not col_ws or 'Item' not in df.columns:
                 continue
 
-            if has_ws_cn:
-                matches = df[
-                    (df[col_ws].astype(str).str.strip().str.lower() == target) |
-                    (df['WorkSkill_CN'].astype(str).str.strip().str.lower() == target)
-                ]
-            else:
-                matches = df[df[col_ws].astype(str).str.strip().str.lower() == target]
+            matches = df[
+                (df[col_ws].astype(str).str.strip().str.lower() == target) |
+                (df.get('WorkSkill_CN', pd.Series()).astype(str).str.strip().str.lower() == target) |
+                (df.get('Work Skill CN', pd.Series()).astype(str).str.strip().str.lower() == target)
+            ]
 
             for _, row in matches.iterrows():
                 item = str(row['Item'])
-                cn_item = str(row['Item_CN']) if ('Item_CN' in df.columns and pd.notna(row.get('Item_CN'))) else ''
+                cn_item = get_row_value(row, df.columns, ['Item_CN', 'Item CN'])
                 
-                if cn_item and cn_item.lower() != 'nan' and cn_item != item:
+                if cn_item and cn_item != item:
                     item_display = f"{item} ({cn_item})"
                 else:
                     item_display = item
 
-                lvl_raw = row.get('Level') if 'Level' in df.columns else '999'
+                lvl_raw = get_row_value(row, df.columns, ['Level'])
                 try:
                     lvl_num = int(float(lvl_raw))
                 except:
                     lvl_num = 999 
 
-                effects_val = str(row['Effects']).replace('\r', '').replace('\n', ' ') if ('Effects' in df.columns and pd.notna(row.get('Effects'))) else ''
-                ing_val = str(row['Ingredients']).replace('\r', '').replace('\n', ' ') if ('Ingredients' in df.columns and pd.notna(row.get('Ingredients'))) else ''
-                ing_cn_val = str(row['Ingredients_CN']).replace('\r', '').replace('\n', ' ') if ('Ingredients_CN' in df.columns and pd.notna(row.get('Ingredients_CN'))) else ''
+                effects_val = get_row_value(row, df.columns, ['Effects', 'Effect'])
+                ing_val = get_row_value(row, df.columns, ['Ingredients', 'Ingredient'])
+                ing_cn_val = get_row_value(row, df.columns, ['Ingredients_CN', 'Ingredients CN', 'Ingredient_CN', 'Ingredient CN'])
                 
                 line_parts = [f"• **Lvl {lvl_num}** : {item_display}"]
                 
-                if effects_val and effects_val.lower() != 'nan':
+                if effects_val:
                     line_parts.append(f"  └ Effects (效果): `{effects_val}`")
                 
-                if ing_val and ing_val.lower() != 'nan' and ing_val.strip() != '' and ing_val.lower() != 'nan':
-                    if ing_cn_val and ing_cn_val.lower() != 'nan' and ing_cn_val.strip() != '':
+                if ing_val:
+                    if ing_cn_val:
                         line_parts.append(f"  └ Ingredients (原料):\n    `{ing_val}`\n    {ing_cn_val}")
                     else:
                         line_parts.append(f"  └ Ingredients (原料):\n    `{ing_val}`")
