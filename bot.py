@@ -10,10 +10,10 @@ import io
 import time
 import opencc
 
-# Initialize OpenCC for Simplified to Traditional Chinese conversion
+# 初始化 OpenCC 簡轉繁轉換器
 converter = opencc.OpenCC('s2t')
 
-# --- 1. Render Specific: Background Lightweight Web Server ---
+# --- 1. Render 專用：背景輕量網頁伺服器 ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -31,7 +31,7 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # -------------------------------------------------------------
-# Google Sheets Configuration
+# Google Sheets 設定
 # -------------------------------------------------------------
 SHEET_ID = "1FiReFPYNbgFhgLcNuZ43bxtrJ9R92vqKpuD6OQDwKjo"
 SHEETS = {
@@ -77,7 +77,7 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-# --- Shared Core Item Search Logic ---
+# --- 共用物品搜尋邏輯 ---
 def search_item_in_cache(name: str):
     converted_name = converter.convert(name)
     target = converted_name.strip().lower()
@@ -138,7 +138,7 @@ def search_item_in_cache(name: str):
             return embed
     return None
 
-# --- Item Autocomplete ---
+# --- 物品自動完成 ---
 async def item_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     choices = []
     converted_current = converter.convert(current)
@@ -159,7 +159,7 @@ async def item_autocomplete(interaction: discord.Interaction, current: str) -> l
         print(f"Autocomplete error: {e}")
     return choices[:25]
 
-# --- Work Skill Autocomplete ---
+# --- 工作技能自動完成 ---
 async def skill_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     skills = set()
     converted_current = converter.convert(current)
@@ -178,7 +178,7 @@ async def skill_autocomplete(interaction: discord.Interaction, current: str) -> 
         print(f"Skill autocomplete error: {e}")
     return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
 
-# --- Core Skill List Builder (Cleaned up formatting for Random Discoveries) ---
+# --- 核心技能清單建構函式（支援顯示 Effects 效果） ---
 def build_skill_embed(skill_name: str):
     converted_skill_name = converter.convert(skill_name)
     target = converted_skill_name.strip().lower()
@@ -218,13 +218,11 @@ def build_skill_embed(skill_name: str):
                 except:
                     lvl_num = 999 
 
-                # Check if it's a Random Discovery based on Location column or sheet contents
-                loc_str = str(row.get('Location', ''))
-                is_random = 'random' in loc_str.lower()
-
-                if is_random:
-                    # Format random discoveries with a distinct icon and indentation
-                    text_line = f"  └ ✨ **Lvl {lvl_num}** (Random): {item_display}"
+                # 檢查是否有 Effects 效果欄位
+                effects_val = str(row['Effects']) if ('Effects' in df.columns and pd.notna(row.get('Effects'))) else ''
+                
+                if effects_val and effects_val.lower() != 'nan':
+                    text_line = f"• **Lvl {lvl_num}** : {item_display} | Effects: `{effects_val}`"
                 else:
                     text_line = f"• **Lvl {lvl_num}** : {item_display}"
                     
@@ -246,7 +244,7 @@ def build_skill_embed(skill_name: str):
         print(f"Skill list builder error: {e}")
     return None
 
-# --- 1. Prefix Command: !search ---
+# --- 1. 前綴指令：!search ---
 @bot.command(name="search")
 async def prefix_search(ctx, *, name: str = None):
     if not name:
@@ -258,11 +256,11 @@ async def prefix_search(ctx, *, name: str = None):
     else:
         await ctx.send(f"❌ Sorry, no item matching **'{name}'** was found.")
 
-# --- 2. Prefix Command: !skill ---
+# --- 2. 前綴指令：!skill ---
 @bot.command(name="skill")
 async def prefix_skill(ctx, *, skill_name: str = None):
     if not skill_name:
-        await ctx.send("❓ Please provide a work skill name. Example: `!skill 钓鱼` or `!skill 釣魚`")
+        await ctx.send("❓ Please provide a work skill name. Example: `!skill Apothecary`")
         return
     
     embed = build_skill_embed(skill_name)
@@ -271,7 +269,7 @@ async def prefix_skill(ctx, *, skill_name: str = None):
     else:
         await ctx.send(f"❌ No items found for skill **'{skill_name}'**.")
 
-# --- 3. Slash Command: /search ---
+# --- 3. 斜線指令：/search ---
 @bot.tree.command(name="search", description="Search for any item, skill, or recipe across all databases.")
 @app_commands.describe(name="Type part of the item name")
 @app_commands.autocomplete(name=item_autocomplete)
@@ -283,7 +281,7 @@ async def search_command(interaction: discord.Interaction, name: str):
     else:
         await interaction.followup.send(f"❌ Sorry, no item matching **'{name}'** was found.")
 
-# --- 4. Slash Command: /skill ---
+# --- 4. 斜線指令：/skill ---
 @bot.tree.command(name="skill", description="View a sorted list of all items for a specific Work Skill.")
 @app_commands.describe(skill_name="Type or select the work skill")
 @app_commands.autocomplete(skill_name=skill_autocomplete)
