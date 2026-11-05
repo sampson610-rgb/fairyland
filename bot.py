@@ -8,8 +8,12 @@ import pandas as pd
 import requests
 import io
 import time
+import opencc
 
-# --- 1. Render Specific: Background Lightweight Web Server (Resolves Port Scan Timeout) ---
+# Initialize OpenCC for Simplified to Traditional Chinese conversion
+converter = opencc.OpenCC('s2t.json')
+
+# --- 1. Render Specific: Background Lightweight Web Server ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -22,10 +26,8 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    print(f"Web server successfully bound to port {port}")
     server.serve_forever()
 
-# Start web server in a background thread immediately
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # -------------------------------------------------------------
@@ -41,7 +43,7 @@ SHEETS = {
 # -------------------------------------------------------------
 
 intents = discord.Intents.default()
-intents.message_content = True  # Enable reading message text for prefix commands
+intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 cached_dfs = {}
@@ -77,7 +79,10 @@ async def on_ready():
 
 # --- Shared Core Item Search Logic ---
 def search_item_in_cache(name: str):
-    target = name.strip().lower()
+    # Convert input from Simplified to Traditional Chinese automatically
+    converted_name = converter.convert(name)
+    target = converted_name.strip().lower()
+
     for sheet_name, df in cached_dfs.items():
         if 'Item' not in df.columns:
             continue
@@ -130,15 +135,15 @@ def search_item_in_cache(name: str):
             if 'Exp' in df.columns and pd.notna(row.get('Exp')):
                 embed.add_field(name="EXP", value=str(row['Exp']), inline=True)
                 
-            db_display = f"{sheet_name}"
-            embed.set_footer(text=f"Database: {db_display} | Source: Ahgang Database")
+            embed.set_footer(text="Source: Ahgang Database")
             return embed
     return None
 
 # --- Item Autocomplete ---
 async def item_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     choices = []
-    target = current.strip().lower()
+    converted_current = converter.convert(current)
+    target = converted_current.strip().lower()
     try:
         for sheet_name, df in cached_dfs.items():
             if 'Item' in df.columns:
@@ -158,7 +163,8 @@ async def item_autocomplete(interaction: discord.Interaction, current: str) -> l
 # --- Work Skill Autocomplete ---
 async def skill_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     skills = set()
-    target = current.strip().lower()
+    converted_current = converter.convert(current)
+    target = converted_current.strip().lower()
     try:
         for sheet_name, df in cached_dfs.items():
             cols_to_check = [c for c in ['WorkSkill', 'Work Skill', 'WorkSkill_CN'] if c in df.columns]
@@ -173,9 +179,10 @@ async def skill_autocomplete(interaction: discord.Interaction, current: str) -> 
         print(f"Skill autocomplete error: {e}")
     return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
 
-# --- Core Skill List Builder (Includes English + Chinese Item Names) ---
+# --- Core Skill List Builder (Removed sheet tag and added s2t conversion) ---
 def build_skill_embed(skill_name: str):
-    target = skill_name.strip().lower()
+    converted_skill_name = converter.convert(skill_name)
+    target = converted_skill_name.strip().lower()
     raw_results = []
     try:
         for sheet_name, df in cached_dfs.items():
@@ -201,7 +208,6 @@ def build_skill_embed(skill_name: str):
                 item = str(row['Item'])
                 cn_item = str(row['Item_CN']) if ('Item_CN' in df.columns and pd.notna(row.get('Item_CN'))) else ''
                 
-                # Format display item name with Chinese if available
                 if cn_item and cn_item.lower() != 'nan' and cn_item != item:
                     item_display = f"{item} ({cn_item})"
                 else:
@@ -213,9 +219,10 @@ def build_skill_embed(skill_name: str):
                 except:
                     lvl_num = 999 
                     
+                # Removed sheet tag [Basic] completely
                 raw_results.append({
                     'level': lvl_num,
-                    'text': f"• **Lvl {lvl_num}** : {item_display} `[{sheet_name}]`"
+                    'text': f"• **Lvl {lvl_num}** : {item_display}"
                 })
                 
         if raw_results:
@@ -235,19 +242,19 @@ def build_skill_embed(skill_name: str):
 @bot.command(name="search")
 async def prefix_search(ctx, *, name: str = None):
     if not name:
-        await ctx.send("❓ Please provide an item name. Example: `!search apple` or `!search 鮮花`")
+        await ctx.send("❓ Please provide an item name. Example: `!search apple`")
         return
     embed = search_item_in_cache(name)
     if embed:
         await ctx.send(embed=embed)
     else:
-        await ctx.send(f"❌ Sorry, no item matching **'{name}'** was found in any database.")
+        await ctx.send(f"❌ Sorry, no item matching **'{name}'** was found.")
 
 # --- 2. Prefix Command: !skill ---
 @bot.command(name="skill")
 async def prefix_skill(ctx, *, skill_name: str = None):
     if not skill_name:
-        await ctx.send("❓ Please provide a work skill name. Example: `!skill Fishing` or `!skill 釣魚`")
+        await ctx.send("❓ Please provide a work skill name. Example: `!skill 钓鱼` or `!skill 釣魚`")
         return
     
     embed = build_skill_embed(skill_name)
@@ -258,7 +265,7 @@ async def prefix_skill(ctx, *, skill_name: str = None):
 
 # --- 3. Slash Command: /search ---
 @bot.tree.command(name="search", description="Search for any item, skill, or recipe across all databases.")
-@app_commands.describe(name="Type part of the item name to see live suggestions")
+@app_commands.describe(name="Type part of the item name")
 @app_commands.autocomplete(name=item_autocomplete)
 async def search_command(interaction: discord.Interaction, name: str):
     await interaction.response.defer()
@@ -266,10 +273,10 @@ async def search_command(interaction: discord.Interaction, name: str):
     if embed:
         await interaction.followup.send(embed=embed)
     else:
-        await interaction.followup.send(f"❌ Sorry, no item matching **'{name}'** was found in any database.")
+        await interaction.followup.send(f"❌ Sorry, no item matching **'{name}'** was found.")
 
 # --- 4. Slash Command: /skill ---
-@bot.tree.command(name="skill", description="View a sorted list of all items and recipes for a specific Work Skill.")
+@bot.tree.command(name="skill", description="View a sorted list of all items for a specific Work Skill.")
 @app_commands.describe(skill_name="Type or select the work skill")
 @app_commands.autocomplete(skill_name=skill_autocomplete)
 async def skill_command(interaction: discord.Interaction, skill_name: str):
