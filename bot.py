@@ -10,8 +10,8 @@ import io
 import time
 import opencc
 
-# Initialize OpenCC for Simplified to Traditional Chinese conversion
-converter = opencc.OpenCC('s2t.json')
+# Initialize OpenCC with just 's2t' (fixed path bug)
+converter = opencc.OpenCC('s2t')
 
 # --- 1. Render Specific: Background Lightweight Web Server ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -79,7 +79,6 @@ async def on_ready():
 
 # --- Shared Core Item Search Logic ---
 def search_item_in_cache(name: str):
-    # Convert input from Simplified to Traditional Chinese automatically
     converted_name = converter.convert(name)
     target = converted_name.strip().lower()
 
@@ -179,7 +178,7 @@ async def skill_autocomplete(interaction: discord.Interaction, current: str) -> 
         print(f"Skill autocomplete error: {e}")
     return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
 
-# --- Core Skill List Builder (Removed sheet tag and added s2t conversion) ---
+# --- Core Skill List Builder ---
 def build_skill_embed(skill_name: str):
     converted_skill_name = converter.convert(skill_name)
     target = converted_skill_name.strip().lower()
@@ -219,7 +218,6 @@ def build_skill_embed(skill_name: str):
                 except:
                     lvl_num = 999 
                     
-                # Removed sheet tag [Basic] completely
                 raw_results.append({
                     'level': lvl_num,
                     'text': f"• **Lvl {lvl_num}** : {item_display}"
