@@ -9,7 +9,7 @@ import requests
 import io
 import time
 
-# --- 1. Render 專用：背景輕量網頁伺服器（解決 Port 掃描超時） ---
+# --- 1. Render Specific: Background Lightweight Web Server (Resolves Port Scan Timeout) ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -25,11 +25,11 @@ def run_web_server():
     print(f"Web server successfully bound to port {port}")
     server.serve_forever()
 
-# 立即在背景執行緒啟動網頁伺服器
+# Start web server in a background thread immediately
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # -------------------------------------------------------------
-# Google Sheets 設定
+# Google Sheets Configuration
 # -------------------------------------------------------------
 SHEET_ID = "1FiReFPYNbgFhgLcNuZ43bxtrJ9R92vqKpuD6OQDwKjo"
 SHEETS = {
@@ -41,7 +41,7 @@ SHEETS = {
 # -------------------------------------------------------------
 
 intents = discord.Intents.default()
-intents.message_content = True  # 確保啟用訊息內容讀取權限
+intents.message_content = True  # Enable reading message text for prefix commands
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 cached_dfs = {}
@@ -75,7 +75,7 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-# --- 共用的核心搜尋邏輯 ---
+# --- Shared Core Item Search Logic ---
 def search_item_in_cache(name: str):
     target = name.strip().lower()
     for sheet_name, df in cached_dfs.items():
@@ -95,7 +95,7 @@ def search_item_in_cache(name: str):
             row = matches.iloc[0]
             item_name = str(row['Item'])
             cn_name = str(row['Item_CN']) if (has_cn_item and pd.notna(row.get('Item_CN'))) else item_name
-            title = f"📦 物品資訊: {item_name} ({cn_name})" if cn_name != item_name else f"📦 物品資訊: {item_name}"
+            title = f"📦 Item Info: {item_name} ({cn_name})" if cn_name != item_name else f"📦 Item Info: {item_name}"
             
             work_skill_val = 'N/A'
             for col in ['Work Skill', 'WorkSkill']:
@@ -111,31 +111,31 @@ def search_item_in_cache(name: str):
             level_val = str(row['Level']) if 'Level' in df.columns and pd.notna(row.get('Level')) else 'N/A'
             
             embed = discord.Embed(title=title, color=discord.Color.blue())
-            embed.add_field(name="Work Skill (技能)", value=work_skill_display, inline=True)
-            embed.add_field(name="Required Level (等級)", value=level_val, inline=True)
+            embed.add_field(name="Work Skill", value=work_skill_display, inline=True)
+            embed.add_field(name="Required Level", value=level_val, inline=True)
             
             loc_str = str(row['Location']) if 'Location' in df.columns and pd.notna(row.get('Location')) else ''
             loc_cn_str = str(row['Location_CN']) if 'Location_CN' in df.columns and pd.notna(row.get('Location_CN')) else ''
             
             if loc_str and loc_str.lower() != 'nan':
                 loc_display = f"{loc_str}\n{loc_cn_str}" if loc_cn_str and loc_cn_str.lower() != 'nan' else loc_str
-                embed.add_field(name="Location (地點)", value=loc_display, inline=False)
+                embed.add_field(name="Location", value=loc_display, inline=False)
                 
             if 'Effects' in df.columns and pd.notna(row.get('Effects')):
-                embed.add_field(name="Effects (效果)", value=str(row['Effects']), inline=False)
+                embed.add_field(name="Effects", value=str(row['Effects']), inline=False)
                 
             if 'Ingredients' in df.columns and pd.notna(row.get('Ingredients')):
-                embed.add_field(name="Ingredients (材料)", value=str(row['Ingredients']), inline=False)
+                embed.add_field(name="Ingredients", value=str(row['Ingredients']), inline=False)
                 
             if 'Exp' in df.columns and pd.notna(row.get('Exp')):
-                embed.add_field(name="EXP (經驗)", value=str(row['Exp']), inline=True)
+                embed.add_field(name="EXP", value=str(row['Exp']), inline=True)
                 
-            db_display = f"{sheet_name}基礎技能" if sheet_name == "Basic" else sheet_name
-            embed.set_footer(text=f"Database : {db_display} | Source ： Ahgang/知足常樂資料庫")
+            db_display = f"{sheet_name}"
+            embed.set_footer(text=f"Database: {db_display} | Source: Ahgang Database")
             return embed
     return None
 
-# --- 物品自動完成 (Autocomplete) ---
+# --- Item Autocomplete ---
 async def item_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     choices = []
     target = current.strip().lower()
@@ -155,63 +155,65 @@ async def item_autocomplete(interaction: discord.Interaction, current: str) -> l
         print(f"Autocomplete error: {e}")
     return choices[:25]
 
-# --- 工作技能自動完成 (Autocomplete) ---
+# --- Work Skill Autocomplete (Supports both English and Chinese columns) ---
 async def skill_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     skills = set()
     target = current.strip().lower()
     try:
         for sheet_name, df in cached_dfs.items():
-            col_to_check = None
-            for col in ['WorkSkill', 'Work Skill']:
-                if col in df.columns:
-                    col_to_check = col
-                    break
-            if not col_to_check and len(df.columns) > 0:
-                col_to_check = df.columns[0]
+            cols_to_check = [c for c in ['WorkSkill', 'Work Skill', 'WorkSkill_CN'] if c in df.columns]
+            if not cols_to_check and len(df.columns) > 0:
+                cols_to_check = [df.columns[0]]
                 
-            if col_to_check:
-                for val in df[col_to_check].dropna().astype(str):
-                    if target in val.lower() and val.lower() not in ['item', 'workskill', 'work skill']:
+            for col in cols_to_check:
+                for val in df[col].dropna().astype(str):
+                    if target in val.lower() and val.lower() not in ['item', 'workskill', 'work skill', 'workskill_cn']:
                         skills.add(val)
     except Exception as e:
         print(f"Skill autocomplete error: {e}")
     return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
 
-# --- 1. 傳統前綴指令：!search ---
+# --- 1. Prefix Command: !search ---
 @bot.command(name="search")
 async def prefix_search(ctx, *, name: str = None):
     if not name:
-        await ctx.send("❓ 請提供物品名稱。範例: `!search apple`")
+        await ctx.send("❓ Please provide an item name. Example: `!search apple` or `!search 鮮花`")
         return
     embed = search_item_in_cache(name)
     if embed:
         await ctx.send(embed=embed)
     else:
-        await ctx.send(f"❌ 抱歉，在任何資料庫中都找不到 **'{name}'**。")
+        await ctx.send(f"❌ Sorry, no item matching **'{name}'** was found in any database.")
 
-# --- 2. 傳統前綴指令：!skill ---
+# --- 2. Prefix Command: !skill (Supports English and Chinese work skills) ---
 @bot.command(name="skill")
 async def prefix_skill(ctx, *, skill_name: str = None):
     if not skill_name:
-        await ctx.send("❓ 請提供工作技能名稱。範例: `!skill Woodcutting`")
+        await ctx.send("❓ Please provide a work skill name. Example: `!skill Fishing` or `!skill 釣魚`")
         return
     
     target = skill_name.strip().lower()
     raw_results = []
     try:
         for sheet_name, df in cached_dfs.items():
-            col_to_check = None
+            has_ws_cn = 'WorkSkill_CN' in df.columns
+            col_ws = None
             for col in ['WorkSkill', 'Work Skill']:
                 if col in df.columns:
-                    col_to_check = col
+                    col_ws = col
                     break
-            if not col_to_check and len(df.columns) > 0:
-                col_to_check = df.columns[0]
-                
-            if not col_to_check or 'Item' not in df.columns:
+            
+            if not col_ws or 'Item' not in df.columns:
                 continue
-                
-            matches = df[df[col_to_check].astype(str).str.strip().str.lower() == target]
+
+            if has_ws_cn:
+                matches = df[
+                    (df[col_ws].astype(str).str.strip().str.lower() == target) |
+                    (df['WorkSkill_CN'].astype(str).str.strip().str.lower() == target)
+                ]
+            else:
+                matches = df[df[col_ws].astype(str).str.strip().str.lower() == target]
+
             for _, row in matches.iterrows():
                 item = str(row['Item'])
                 lvl_raw = row.get('Level') if 'Level' in df.columns else '999'
@@ -231,16 +233,16 @@ async def prefix_skill(ctx, *, skill_name: str = None):
             if len(desc) > 4000:
                 desc = desc[:3996] + "..."
                 
-            embed = discord.Embed(title=f"🛠️ 工作技能清單: {skill_name}", description=desc, color=discord.Color.gold())
-            embed.set_footer(text="Source ： Ahgang/知足常樂資料庫")
+            embed = discord.Embed(title=f"🛠️ Work Skill List: {skill_name}", description=desc, color=discord.Color.gold())
+            embed.set_footer(text="Source: Ahgang Database")
             await ctx.send(embed=embed)
         else:
-            await ctx.send(f"❌ 找不到技能 **'{skill_name}'** 的相關物品。")
+            await ctx.send(f"❌ No items found for skill **'{skill_name}'**.")
     except Exception as e:
         print(f"Prefix skill list error: {e}")
-        await ctx.send("❌ 獲取技能清單時發生錯誤。")
+        await ctx.send("❌ An error occurred while fetching the skill list.")
 
-# --- 3. 斜線指令：/search ---
+# --- 3. Slash Command: /search ---
 @bot.tree.command(name="search", description="Search for any item, skill, or recipe across all databases.")
 @app_commands.describe(name="Type part of the item name to see live suggestions")
 @app_commands.autocomplete(name=item_autocomplete)
@@ -250,9 +252,9 @@ async def search_command(interaction: discord.Interaction, name: str):
     if embed:
         await interaction.followup.send(embed=embed)
     else:
-        await interaction.followup.send(f"❌ 抱歉，在任何資料庫中都找不到 **'{name}'**。")
+        await interaction.followup.send(f"❌ Sorry, no item matching **'{name}'** was found in any database.")
 
-# --- 4. 斜線指令：/skill ---
+# --- 4. Slash Command: /skill (Supports English and Chinese work skills) ---
 @bot.tree.command(name="skill", description="View a sorted list of all items and recipes for a specific Work Skill.")
 @app_commands.describe(skill_name="Type or select the work skill")
 @app_commands.autocomplete(skill_name=skill_autocomplete)
@@ -263,18 +265,24 @@ async def skill_command(interaction: discord.Interaction, skill_name: str):
     
     try:
         for sheet_name, df in cached_dfs.items():
-            col_to_check = None
+            has_ws_cn = 'WorkSkill_CN' in df.columns
+            col_ws = None
             for col in ['WorkSkill', 'Work Skill']:
                 if col in df.columns:
-                    col_to_check = col
+                    col_ws = col
                     break
-            if not col_to_check and len(df.columns) > 0:
-                col_to_check = df.columns[0]
-                
-            if not col_to_check or 'Item' not in df.columns:
+            
+            if not col_ws or 'Item' not in df.columns:
                 continue
-                
-            matches = df[df[col_to_check].astype(str).str.strip().str.lower() == target]
+
+            if has_ws_cn:
+                matches = df[
+                    (df[col_ws].astype(str).str.strip().str.lower() == target) |
+                    (df['WorkSkill_CN'].astype(str).str.strip().str.lower() == target)
+                ]
+            else:
+                matches = df[df[col_ws].astype(str).str.strip().str.lower() == target]
+
             for _, row in matches.iterrows():
                 item = str(row['Item'])
                 lvl_raw = row.get('Level') if 'Level' in df.columns else '999'
@@ -294,14 +302,14 @@ async def skill_command(interaction: discord.Interaction, skill_name: str):
             if len(desc) > 4000:
                 desc = desc[:3996] + "..."
                 
-            embed = discord.Embed(title=f"🛠️ 工作技能清單: {skill_name}", description=desc, color=discord.Color.gold())
-            embed.set_footer(text="Source ： Ahgang/知足常樂資料庫")
+            embed = discord.Embed(title=f"🛠️ Work Skill List: {skill_name}", description=desc, color=discord.Color.gold())
+            embed.set_footer(text="Source: Ahgang Database")
             await interaction.followup.send(embed=embed)
         else:
-            await interaction.followup.send(f"❌ 找不到技能 **'{skill_name}'** 的相關物品。")
+            await interaction.followup.send(f"❌ No items found for skill **'{skill_name}'**.")
     except Exception as e:
         print(f"Skill list error: {e}")
-        await interaction.followup.send(f"❌ 獲取技能清單時發生錯誤。")
+        await interaction.followup.send(f"❌ An error occurred while fetching the skill list.")
 
 token = os.environ.get("DISCORD_TOKEN")
 if not token:
