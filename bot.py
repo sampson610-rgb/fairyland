@@ -77,7 +77,7 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-# --- 共用物品搜尋邏輯 ---
+# --- 共用物品搜尋邏輯（單一物品詳細資訊：將中文移至下一行） ---
 def search_item_in_cache(name: str):
     converted_name = converter.convert(name)
     target = converted_name.strip().lower()
@@ -131,7 +131,8 @@ def search_item_in_cache(name: str):
             if 'Ingredients' in df.columns and pd.notna(row.get('Ingredients')):
                 ing_str = str(row['Ingredients'])
                 ing_cn = str(row['Ingredients_CN']) if ('Ingredients_CN' in df.columns and pd.notna(row.get('Ingredients_CN'))) else ''
-                ing_display = f"{ing_str} | {ing_cn}" if ing_cn and ing_cn.lower() != 'nan' else ing_str
+                # 將中文材料改為換行顯示
+                ing_display = f"{ing_str}\n{ing_cn}" if ing_cn and ing_cn.lower() != 'nan' else ing_str
                 embed.add_field(name="Ingredients", value=ing_display, inline=False)
                 
             if 'Exp' in df.columns and pd.notna(row.get('Exp')):
@@ -181,7 +182,7 @@ async def skill_autocomplete(interaction: discord.Interaction, current: str) -> 
         print(f"Skill autocomplete error: {e}")
     return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
 
-# --- 核心技能清單建構函式（同時顯示中文材料 Ingredients_CN） ---
+# --- 核心技能清單建構函式（將中文材料/效果改至下一行顯示） ---
 def build_skill_embed(skill_name: str):
     converted_skill_name = converter.convert(skill_name)
     target = converted_skill_name.strip().lower()
@@ -210,6 +211,7 @@ def build_skill_embed(skill_name: str):
                 item = str(row['Item'])
                 cn_item = str(row['Item_CN']) if ('Item_CN' in df.columns and pd.notna(row.get('Item_CN'))) else ''
                 
+                # 物品名稱的中文改為括號包覆或換行（此處維持物品名稱旁括號，或可自行調整）
                 if cn_item and cn_item.lower() != 'nan' and cn_item != item:
                     item_display = f"{item} ({cn_item})"
                 else:
@@ -228,19 +230,17 @@ def build_skill_embed(skill_name: str):
                 ing_val = str(row['Ingredients']) if ('Ingredients' in df.columns and pd.notna(row.get('Ingredients'))) else ''
                 ing_cn_val = str(row['Ingredients_CN']) if ('Ingredients_CN' in df.columns and pd.notna(row.get('Ingredients_CN'))) else ''
                 
-                extra_info = []
+                line_parts = [f"• **Lvl {lvl_num}** : {item_display}"]
+                
                 if effects_val and effects_val.lower() != 'nan':
-                    extra_info.append(f"Effects: `{effects_val}`")
+                    line_parts.append(f"  └ Effects: `{effects_val}`")
                 
                 if ing_val and ing_val.lower() != 'nan':
-                    ing_display = f"{ing_val} ({ing_cn_val})" if ing_cn_val and ing_cn_val.lower() != 'nan' else ing_val
-                    extra_info.append(f"Ing: `{ing_display}`")
+                    line_parts.append(f"  └ Ing: `{ing_val}`")
+                    if ing_cn_val and ing_cn_val.lower() != 'nan':
+                        line_parts.append(f"    `{ing_cn_val}`")
 
-                details_str = " | ".join(extra_info)
-                if details_str:
-                    text_line = f"• **Lvl {lvl_num}** : {item_display} | {details_str}"
-                else:
-                    text_line = f"• **Lvl {lvl_num}** : {item_display}"
+                text_line = "\n".join(line_parts)
                     
                 raw_results.append({
                     'level': lvl_num,
