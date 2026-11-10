@@ -31,7 +31,7 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # -------------------------------------------------------------
-# Google Sheets 設定（在此處加入了新的 "spell" 分頁）
+# Google Sheets 設定
 # -------------------------------------------------------------
 SHEET_ID = "1FiReFPYNbgFhgLcNuZ43bxtrJ9R92vqKpuD6OQDwKjo"
 SHEETS = {
@@ -93,7 +93,7 @@ def search_item_in_cache(name: str):
     target = converted_name.strip().lower()
 
     for sheet_name, df in cached_dfs.items():
-        if 'Item' not in df.columns and 'Spell' not in df.columns and 'D' not in df.columns:
+        if 'Item' not in df.columns and 'Spell' not in df.columns and len(df.columns) <= 3:
             continue
             
         has_cn_item = 'Item_CN' in df.columns or 'Item CN' in df.columns
@@ -152,6 +152,28 @@ def search_item_in_cache(name: str):
             return embed
     return None
 
+# --- 物品自動完成函式 ---
+async def item_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    choices = []
+    converted_current = converter.convert(current)
+    target = converted_current.strip().lower()
+    try:
+        for sheet_name, df in cached_dfs.items():
+            if 'Item' in df.columns:
+                for item in df['Item'].dropna().astype(str):
+                    if target in item.lower():
+                        if item not in [c.name for c in choices]:
+                            choices.append(app_commands.Choice(name=item, value=item))
+            for cn_col in ['Item_CN', 'Item CN']:
+                if cn_col in df.columns:
+                    for item_cn in df[cn_col].dropna().astype(str):
+                        if target in item_cn.lower():
+                            if item_cn not in [c.name for c in choices]:
+                                choices.append(app_commands.Choice(name=item_cn, value=item_cn))
+    except Exception as e:
+        print(f"Autocomplete error: {e}")
+    return choices[:25]
+
 # --- 支援分頁按鈕的 View 類別 ---
 class SkillPaginatorView(discord.ui.View):
     def __init__(self, chunks, title_name):
@@ -168,7 +190,7 @@ class SkillPaginatorView(discord.ui.View):
     def get_current_embed(self):
         desc = "\n".join(self.chunks[self.current_page])
         embed = discord.Embed(
-            title=f"📜 Spell/Skill List: {self.title_name} (Page {self.current_page + 1}/{len(self.chunks)})",
+            title=f"🛠️ List: {self.title_name} (Page {self.current_page + 1}/{len(self.chunks)})",
             description=desc,
             color=discord.Color.gold()
         )
@@ -196,15 +218,11 @@ def get_skill_paginator(query_name: str):
     raw_results = []
     try:
         for sheet_name, df in cached_dfs.items():
-            # 針對 spell 分頁的特殊欄位對應（根據你的截圖結構調整）
             if sheet_name == 'spell':
-                # 假設欄位順序或名稱：Col A=Class(CN), Col B=Class(EN), Col C=Spell(CN), Col D=Spell(EN), Col E=SkillTree, Col F=Desc(CN), Col G=Desc(EN) 等
-                # 我們用通用字串比對找出符合該 Class (例如 mage / archmage / 法師 / 巫師) 的列
                 match_rows = df[
                     df.astype(str).apply(lambda row: row.str.lower().str.contains(target).any(), axis=1)
                 ]
                 for _, row in match_rows.iterrows():
-                    # 抓取欄位資料（安全檢查避免 Index Error）
                     cols = list(df.columns)
                     class_cn = str(row.iloc[0]) if len(cols) > 0 and pd.notna(row.iloc[0]) else ''
                     class_en = str(row.iloc[1]) if len(cols) > 1 and pd.notna(row.iloc[1]) else ''
@@ -214,7 +232,6 @@ def get_skill_paginator(query_name: str):
                     desc_cn = str(row.iloc[5]) if len(cols) > 5 and pd.notna(row.iloc[5]) else ''
                     desc_en = str(row.iloc[6]) if len(cols) > 6 and pd.notna(row.iloc[6]) else ''
 
-                    # 確認這列確實屬於使用者搜尋的 Class (英文或中文)
                     if target in class_en.lower() or target in class_cn.lower():
                         spell_display = f"{spell_en} ({spell_cn})" if spell_cn else spell_en
                         line_parts = [f"• **{spell_display}** [{class_en}/{class_cn}]"]
@@ -231,7 +248,6 @@ def get_skill_paginator(query_name: str):
                             'text': text_line
                         })
             else:
-                # 處理原本的工作技能分頁 (Basic, Advanced, Weapon, Armor)
                 col_ws = None
                 for col in ['WorkSkill', 'Work Skill', 'WorkSkill_CN', 'Work Skill CN']:
                     if col in df.columns:
@@ -295,7 +311,6 @@ def get_skill_paginator(query_name: str):
                     })
                 
         if raw_results:
-            # 如果是工作技能就用等級排序，如果是法術清單就用名稱排序
             if any('level' in r for r in raw_results):
                 raw_results.sort(key=lambda x: x.get('level', 999))
             
@@ -333,7 +348,7 @@ async def prefix_search(ctx, *, name: str = None):
     else:
         await ctx.send(f"❌ Sorry, no item matching **'{name}'** was found.")
 
-# --- 2. 前綴指令：!skill (或可用來查詢類別如 !skill mage) ---
+# --- 2. 前綴指令：!skill ---
 @bot.command(name="skill")
 async def prefix_skill(ctx, *, skill_name: str = None):
     if not skill_name:
@@ -349,7 +364,7 @@ async def prefix_skill(ctx, *, skill_name: str = None):
 # --- 3. 斜線指令：/search ---
 @bot.tree.command(name="search", description="Search for any item, skill, or recipe across all databases.")
 @app_commands.describe(name="Type part of the item name")
-@app_commands.autocomplete(name=item_autocomplete if 'item_autocomplete' in globals() else None)
+@app_commands.autocomplete(name=item_autocomplete)
 async def search_command(interaction: discord.Interaction, name: str):
     await interaction.response.defer()
     embed = search_item_in_cache(name)
@@ -358,7 +373,7 @@ async def search_command(interaction: discord.Interaction, name: str):
     else:
         await interaction.followup.send(f"❌ Sorry, no item matching **'{name}'** was found.")
 
-# --- 4. 斜線指令：/skill (同時支援 /skill mage, /skill archmage 或中文職業) ---
+# --- 4. 斜線指令：/skill ---
 @bot.tree.command(name="skill", description="View a sorted list of all items or spells for a specific Work Skill or Class.")
 @app_commands.describe(skill_name="Type or select the work skill or class (e.g., Mage, ArchMage, 法師)")
 async def skill_command(interaction: discord.Interaction, skill_name: str):
