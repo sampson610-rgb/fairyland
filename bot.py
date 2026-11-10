@@ -31,14 +31,15 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # -------------------------------------------------------------
-# Google Sheets 設定
+# Google Sheets 設定（在此處加入了新的 "spell" 分頁）
 # -------------------------------------------------------------
 SHEET_ID = "1FiReFPYNbgFhgLcNuZ43bxtrJ9R92vqKpuD6OQDwKjo"
 SHEETS = {
     "Basic": f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Basic",
     "Advanced": f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Advanced",
     "Weapon": f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Weapon",
-    "Armor": f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Armor"
+    "Armor": f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Armor",
+    "spell": f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=spell"
 }
 # -------------------------------------------------------------
 
@@ -92,23 +93,23 @@ def search_item_in_cache(name: str):
     target = converted_name.strip().lower()
 
     for sheet_name, df in cached_dfs.items():
-        if 'Item' not in df.columns:
+        if 'Item' not in df.columns and 'Spell' not in df.columns and 'D' not in df.columns:
             continue
             
         has_cn_item = 'Item_CN' in df.columns or 'Item CN' in df.columns
         if has_cn_item:
             matches = df[
-                (df['Item'].astype(str).str.strip().str.lower() == target) |
+                (df.get('Item', pd.Series()).astype(str).str.strip().str.lower() == target) |
                 (df.get('Item_CN', pd.Series()).astype(str).str.strip().str.lower() == target) |
                 (df.get('Item CN', pd.Series()).astype(str).str.strip().str.lower() == target)
             ]
         else:
-            matches = df[df['Item'].astype(str).str.strip().str.lower() == target]
+            matches = df[df.get('Item', pd.Series()).astype(str).str.strip().str.lower() == target]
             
         if not matches.empty:
             row = matches.iloc[0]
-            item_name = str(row['Item'])
-            cn_name = get_row_value(row, df.columns, ['Item_CN', 'Item CN', 'Chinese Item'])
+            item_name = get_row_value(row, df.columns, ['Item', 'Spell', df.columns[3] if len(df.columns) > 3 else ''])
+            cn_name = get_row_value(row, df.columns, ['Item_CN', 'Item CN', 'Chinese Item', df.columns[4] if len(df.columns) > 4 else ''])
             if not cn_name:
                 cn_name = item_name
             title = f"📦 Item Info: {item_name} ({cn_name})" if cn_name != item_name else f"📦 Item Info: {item_name}"
@@ -133,9 +134,9 @@ def search_item_in_cache(name: str):
                 loc_display = f"`{loc_str}`\n{loc_cn_str}" if loc_cn_str else f"`{loc_str}`"
                 embed.add_field(name="Location (地點)", value=loc_display, inline=False)
                 
-            eff_str = get_row_value(row, df.columns, ['Effects', 'Effect'])
+            eff_str = get_row_value(row, df.columns, ['Effects', 'Effect', 'Description'])
             if eff_str:
-                embed.add_field(name="Effects (效果)", value=eff_str, inline=False)
+                embed.add_field(name="Effects / Description (效果/說明)", value=eff_str, inline=False)
                 
             ing_str = get_row_value(row, df.columns, ['Ingredients', 'Ingredient'])
             ing_cn = get_row_value(row, df.columns, ['Ingredients_CN', 'Ingredients CN', 'Ingredient_CN', 'Ingredient CN'])
@@ -151,53 +152,12 @@ def search_item_in_cache(name: str):
             return embed
     return None
 
-# --- 物品自動完成 ---
-async def item_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
-    choices = []
-    converted_current = converter.convert(current)
-    target = converted_current.strip().lower()
-    try:
-        for sheet_name, df in cached_dfs.items():
-            if 'Item' in df.columns:
-                for item in df['Item'].dropna().astype(str):
-                    if target in item.lower():
-                        if item not in [c.name for c in choices]:
-                            choices.append(app_commands.Choice(name=item, value=item))
-            for cn_col in ['Item_CN', 'Item CN']:
-                if cn_col in df.columns:
-                    for item_cn in df[cn_col].dropna().astype(str):
-                        if target in item_cn.lower():
-                            if item_cn not in [c.name for c in choices]:
-                                choices.append(app_commands.Choice(name=item_cn, value=item_cn))
-    except Exception as e:
-        print(f"Autocomplete error: {e}")
-    return choices[:25]
-
-# --- 工作技能自動完成 ---
-async def skill_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
-    skills = set()
-    converted_current = converter.convert(current)
-    target = converted_current.strip().lower()
-    try:
-        for sheet_name, df in cached_dfs.items():
-            cols_to_check = [c for c in ['WorkSkill', 'Work Skill', 'WorkSkill_CN', 'Work Skill CN'] if c in df.columns]
-            if not cols_to_check and len(df.columns) > 0:
-                cols_to_check = [df.columns[0]]
-                
-            for col in cols_to_check:
-                for val in df[col].dropna().astype(str):
-                    if target in val.lower() and val.lower() not in ['item', 'workskill', 'work skill', 'workskill_cn', 'work skill cn']:
-                        skills.add(val)
-    except Exception as e:
-        print(f"Skill autocomplete error: {e}")
-    return [app_commands.Choice(name=s, value=s) for s in list(skills)[:25]]
-
 # --- 支援分頁按鈕的 View 類別 ---
 class SkillPaginatorView(discord.ui.View):
-    def __init__(self, chunks, skill_name):
+    def __init__(self, chunks, title_name):
         super().__init__(timeout=180)
         self.chunks = chunks
-        self.skill_name = skill_name
+        self.title_name = title_name
         self.current_page = 0
         self.update_buttons()
 
@@ -208,7 +168,7 @@ class SkillPaginatorView(discord.ui.View):
     def get_current_embed(self):
         desc = "\n".join(self.chunks[self.current_page])
         embed = discord.Embed(
-            title=f"🛠️ Work Skill List: {self.skill_name} (Page {self.current_page + 1}/{len(self.chunks)})",
+            title=f"📜 Spell/Skill List: {self.title_name} (Page {self.current_page + 1}/{len(self.chunks)})",
             description=desc,
             color=discord.Color.gold()
         )
@@ -229,77 +189,115 @@ class SkillPaginatorView(discord.ui.View):
             self.update_buttons()
             await interaction.response.edit_message(embed=self.get_current_embed(), view=self)
 
-# --- 核心技能清單建構函式（支援 Location 與 Ingredients 顯示） ---
-def get_skill_paginator(skill_name: str):
-    converted_skill_name = converter.convert(skill_name)
-    target = converted_skill_name.strip().lower()
+# --- 核心查詢處理（同時支援工作技能與 Spell 頁面查詢） ---
+def get_skill_paginator(query_name: str):
+    converted_query = converter.convert(query_name)
+    target = converted_query.strip().lower()
     raw_results = []
     try:
         for sheet_name, df in cached_dfs.items():
-            col_ws = None
-            for col in ['WorkSkill', 'Work Skill', 'WorkSkill_CN', 'Work Skill CN']:
-                if col in df.columns:
-                    col_ws = col
-                    break
-            if not col_ws and len(df.columns) > 0:
-                col_ws = df.columns[0]
-            
-            if not col_ws or 'Item' not in df.columns:
-                continue
+            # 針對 spell 分頁的特殊欄位對應（根據你的截圖結構調整）
+            if sheet_name == 'spell':
+                # 假設欄位順序或名稱：Col A=Class(CN), Col B=Class(EN), Col C=Spell(CN), Col D=Spell(EN), Col E=SkillTree, Col F=Desc(CN), Col G=Desc(EN) 等
+                # 我們用通用字串比對找出符合該 Class (例如 mage / archmage / 法師 / 巫師) 的列
+                match_rows = df[
+                    df.astype(str).apply(lambda row: row.str.lower().str.contains(target).any(), axis=1)
+                ]
+                for _, row in match_rows.iterrows():
+                    # 抓取欄位資料（安全檢查避免 Index Error）
+                    cols = list(df.columns)
+                    class_cn = str(row.iloc[0]) if len(cols) > 0 and pd.notna(row.iloc[0]) else ''
+                    class_en = str(row.iloc[1]) if len(cols) > 1 and pd.notna(row.iloc[1]) else ''
+                    spell_cn = str(row.iloc[2]) if len(cols) > 2 and pd.notna(row.iloc[2]) else ''
+                    spell_en = str(row.iloc[3]) if len(cols) > 3 and pd.notna(row.iloc[3]) else ''
+                    skill_tree = str(row.iloc[4]) if len(cols) > 4 and pd.notna(row.iloc[4]) else ''
+                    desc_cn = str(row.iloc[5]) if len(cols) > 5 and pd.notna(row.iloc[5]) else ''
+                    desc_en = str(row.iloc[6]) if len(cols) > 6 and pd.notna(row.iloc[6]) else ''
 
-            matches = df[
-                (df[col_ws].astype(str).str.strip().str.lower() == target) |
-                (df.get('WorkSkill_CN', pd.Series()).astype(str).str.strip().str.lower() == target) |
-                (df.get('Work Skill CN', pd.Series()).astype(str).str.strip().str.lower() == target)
-            ]
+                    # 確認這列確實屬於使用者搜尋的 Class (英文或中文)
+                    if target in class_en.lower() or target in class_cn.lower():
+                        spell_display = f"{spell_en} ({spell_cn})" if spell_cn else spell_en
+                        line_parts = [f"• **{spell_display}** [{class_en}/{class_cn}]"]
+                        if skill_tree and skill_tree.lower() != 'nan':
+                            line_parts.append(f"  └ Skill Tree (技能樹): `{skill_tree}`")
+                        if desc_en and desc_en.lower() != 'nan':
+                            line_parts.append(f"  └ Desc (英文): `{desc_en}`")
+                        if desc_cn and desc_cn.lower() != 'nan':
+                            line_parts.append(f"  └ 說明 (中文): {desc_cn}")
 
-            for _, row in matches.iterrows():
-                item = str(row['Item'])
-                cn_item = get_row_value(row, df.columns, ['Item_CN', 'Item CN'])
+                        text_line = "\n".join(line_parts) + "\n"
+                        raw_results.append({
+                            'sort_key': spell_en,
+                            'text': text_line
+                        })
+            else:
+                # 處理原本的工作技能分頁 (Basic, Advanced, Weapon, Armor)
+                col_ws = None
+                for col in ['WorkSkill', 'Work Skill', 'WorkSkill_CN', 'Work Skill CN']:
+                    if col in df.columns:
+                        col_ws = col
+                        break
+                if not col_ws and len(df.columns) > 0:
+                    col_ws = df.columns[0]
                 
-                if cn_item and cn_item != item:
-                    item_display = f"{item} ({cn_item})"
-                else:
-                    item_display = item
+                if not col_ws or 'Item' not in df.columns:
+                    continue
 
-                lvl_raw = get_row_value(row, df.columns, ['Level'])
-                try:
-                    lvl_num = int(float(lvl_raw))
-                except:
-                    lvl_num = 999 
+                matches = df[
+                    (df[col_ws].astype(str).str.strip().str.lower() == target) |
+                    (df.get('WorkSkill_CN', pd.Series()).astype(str).str.strip().str.lower() == target) |
+                    (df.get('Work Skill CN', pd.Series()).astype(str).str.strip().str.lower() == target)
+                ]
 
-                loc_str = get_row_value(row, df.columns, ['Location'])
-                loc_cn_str = get_row_value(row, df.columns, ['Location_CN', 'Location CN'])
-                effects_val = get_row_value(row, df.columns, ['Effects', 'Effect'])
-                ing_val = get_row_value(row, df.columns, ['Ingredients', 'Ingredient'])
-                ing_cn_val = get_row_value(row, df.columns, ['Ingredients_CN', 'Ingredients CN', 'Ingredient_CN', 'Ingredient CN'])
-                
-                line_parts = [f"• **Lvl {lvl_num}** : {item_display}"]
-                
-                if loc_str:
-                    if loc_cn_str:
-                        line_parts.append(f"  └ Location (地點):\n    `{loc_str}`\n    {loc_cn_str}")
-                    else:
-                        line_parts.append(f"  └ Location (地點):\n    `{loc_str}`")
-
-                if effects_val:
-                    line_parts.append(f"  └ Effects (效果): `{effects_val}`")
-                
-                if ing_val:
-                    if ing_cn_val:
-                        line_parts.append(f"  └ Ingredients (原料):\n    `{ing_val}`\n    {ing_cn_val}")
-                    else:
-                        line_parts.append(f"  └ Ingredients (原料):\n    `{ing_val}`")
-
-                text_line = "\n".join(line_parts) + "\n"
+                for _, row in matches.iterrows():
+                    item = str(row['Item'])
+                    cn_item = get_row_value(row, df.columns, ['Item_CN', 'Item CN'])
                     
-                raw_results.append({
-                    'level': lvl_num,
-                    'text': text_line
-                })
+                    if cn_item and cn_item != item:
+                        item_display = f"{item} ({cn_item})"
+                    else:
+                        item_display = item
+
+                    lvl_raw = get_row_value(row, df.columns, ['Level'])
+                    try:
+                        lvl_num = int(float(lvl_raw))
+                    except:
+                        lvl_num = 999 
+
+                    loc_str = get_row_value(row, df.columns, ['Location'])
+                    loc_cn_str = get_row_value(row, df.columns, ['Location_CN', 'Location CN'])
+                    effects_val = get_row_value(row, df.columns, ['Effects', 'Effect'])
+                    ing_val = get_row_value(row, df.columns, ['Ingredients', 'Ingredient'])
+                    ing_cn_val = get_row_value(row, df.columns, ['Ingredients_CN', 'Ingredients CN', 'Ingredient_CN', 'Ingredient CN'])
+                    
+                    line_parts = [f"• **Lvl {lvl_num}** : {item_display}"]
+                    
+                    if loc_str:
+                        if loc_cn_str:
+                            line_parts.append(f"  └ Location (地點):\n    `{loc_str}`\n    {loc_cn_str}")
+                        else:
+                            line_parts.append(f"  └ Location (地點):\n    `{loc_str}`")
+
+                    if effects_val:
+                        line_parts.append(f"  └ Effects (效果): `{effects_val}`")
+                    
+                    if ing_val:
+                        if ing_cn_val:
+                            line_parts.append(f"  └ Ingredients (原料):\n    `{ing_val}`\n    {ing_cn_val}")
+                        else:
+                            line_parts.append(f"  └ Ingredients (原料):\n    `{ing_val}`")
+
+                    text_line = "\n".join(line_parts) + "\n"
+                        
+                    raw_results.append({
+                        'level': lvl_num,
+                        'text': text_line
+                    })
                 
         if raw_results:
-            raw_results.sort(key=lambda x: x['level'])
+            # 如果是工作技能就用等級排序，如果是法術清單就用名稱排序
+            if any('level' in r for r in raw_results):
+                raw_results.sort(key=lambda x: x.get('level', 999))
             
             chunks = []
             current_chunk = []
@@ -317,7 +315,7 @@ def get_skill_paginator(skill_name: str):
             if current_chunk:
                 chunks.append(current_chunk)
                 
-            view = SkillPaginatorView(chunks, skill_name)
+            view = SkillPaginatorView(chunks, query_name)
             return view.get_current_embed(), view
     except Exception as e:
         print(f"Skill list builder error: {e}")
@@ -335,23 +333,23 @@ async def prefix_search(ctx, *, name: str = None):
     else:
         await ctx.send(f"❌ Sorry, no item matching **'{name}'** was found.")
 
-# --- 2. 前綴指令：!skill ---
+# --- 2. 前綴指令：!skill (或可用來查詢類別如 !skill mage) ---
 @bot.command(name="skill")
 async def prefix_skill(ctx, *, skill_name: str = None):
     if not skill_name:
-        await ctx.send("❓ Please provide a work skill name. Example: `!skill Apothecary`")
+        await ctx.send("❓ Please provide a work skill or class name. Example: `!skill Mage`")
         return
     
     embed, view = get_skill_paginator(skill_name)
     if embed:
         await ctx.send(embed=embed, view=view)
     else:
-        await ctx.send(f"❌ No items found for skill **'{skill_name}'**.")
+        await ctx.send(f"❌ No items or spells found for **'{skill_name}'**.")
 
 # --- 3. 斜線指令：/search ---
 @bot.tree.command(name="search", description="Search for any item, skill, or recipe across all databases.")
 @app_commands.describe(name="Type part of the item name")
-@app_commands.autocomplete(name=item_autocomplete)
+@app_commands.autocomplete(name=item_autocomplete if 'item_autocomplete' in globals() else None)
 async def search_command(interaction: discord.Interaction, name: str):
     await interaction.response.defer()
     embed = search_item_in_cache(name)
@@ -360,17 +358,16 @@ async def search_command(interaction: discord.Interaction, name: str):
     else:
         await interaction.followup.send(f"❌ Sorry, no item matching **'{name}'** was found.")
 
-# --- 4. 斜線指令：/skill ---
-@bot.tree.command(name="skill", description="View a sorted list of all items for a specific Work Skill.")
-@app_commands.describe(skill_name="Type or select the work skill")
-@app_commands.autocomplete(skill_name=skill_autocomplete)
+# --- 4. 斜線指令：/skill (同時支援 /skill mage, /skill archmage 或中文職業) ---
+@bot.tree.command(name="skill", description="View a sorted list of all items or spells for a specific Work Skill or Class.")
+@app_commands.describe(skill_name="Type or select the work skill or class (e.g., Mage, ArchMage, 法師)")
 async def skill_command(interaction: discord.Interaction, skill_name: str):
     await interaction.response.defer()
     embed, view = get_skill_paginator(skill_name)
     if embed:
         await interaction.followup.send(embed=embed, view=view)
     else:
-        await interaction.followup.send(f"❌ No items found for skill **'{skill_name}'**.")
+        await interaction.followup.send(f"❌ No items or spells found for **'{skill_name}'**.")
 
 token = os.environ.get("DISCORD_TOKEN")
 if not token:
